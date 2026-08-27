@@ -3,10 +3,10 @@
 A stock research toolkit for the family, covering both US and China-listed
 stocks (A-shares, Hong Kong, and Chinese ADRs). Two ways to use it:
 
-- **`app.py`** -- a large-print Streamlit dashboard with a plain-English chat
-  assistant. Built for non-technical family members: search a stock by
-  company name, see a clear buy/sell signal, risk flags, and a long-term
-  value checklist, or just ask a question in the chat box.
+- **`app.py`** -- a large-print Streamlit dashboard. Built for non-technical
+  family members: search a stock by company name, see a clear buy/sell
+  signal, risk flags, a long-term value checklist, and a daily "why did
+  this move" briefing.
 - **`stock_managment.ipynb`** -- a Jupyter notebook covering the same
   capabilities for anyone who prefers working in code.
 
@@ -22,6 +22,8 @@ covers:
 6. Long-term / value-investing checklist
 7. Full fundamentals (income statement, balance sheet, cash flow)
 8. Quarterly report reader (QoQ / YoY change on key line items)
+9. Today's Briefing -- a daily "why did this stock move" explanation, generated
+   locally by [Ollama](https://ollama.com) (free, private, no API key)
 
 > Everything here is data + heuristics, not investment advice -- verify
 > anything decision-critical against the company's actual filings.
@@ -42,13 +44,21 @@ Requires Python 3.11+.
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env             # Windows: copy .env.example .env
 ```
 
-Then edit `.env` and add your Anthropic API key (get one at
-[console.anthropic.com](https://console.anthropic.com/settings/keys)) --
-this is only needed for the chat assistant in `app.py`; the dashboard and
-notebook otherwise work with no key or account setup at all.
+The dashboard and notebook work immediately with no account or API key --
+everything is either free (`yfinance`) or local (Ollama).
+
+**Optional: Today's Briefing** (the daily "why did this stock move"
+explanation) needs [Ollama](https://ollama.com) running locally:
+
+```bash
+winget install Ollama.Ollama      # or download from ollama.com
+ollama pull llama3.1:8b
+```
+
+Everything else on the dashboard works without this -- Today's Briefing just
+shows a setup reminder instead until Ollama is running.
 
 ## Running it
 
@@ -82,7 +92,6 @@ only matter if you're using `stock_toolkit.py` directly.
 | File | Purpose |
 |---|---|
 | `stock_toolkit.py` | Core data + analysis functions, reused by both the app and the notebook |
-| `app.py` | Streamlit dashboard + chat |
-| `notebooks/stock_managment.ipynb` | Notebook walkthrough of all 8 capabilities |
+| `app.py` | Streamlit dashboard |
+| `notebooks/stock_managment.ipynb` | Notebook walkthrough of all capabilities |
 | `requirements.txt` | Python dependencies |
-| `.env.example` | Template for your local `.env` (never commit the real `.env`) |

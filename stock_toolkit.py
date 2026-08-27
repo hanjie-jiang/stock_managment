@@ -12,6 +12,7 @@ company's actual filings before anyone acts on them.
 
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 
 pd.set_option("display.width", 140)
@@ -287,6 +288,33 @@ def daily_briefing_data(symbol, news_limit=6):
 
 
 # ---------------------------------------------------------------------------
+# Local LLM (Ollama) -- free, private, no API key. Used for the daily
+# briefing's plain-English "why did this move" explanation.
+# ---------------------------------------------------------------------------
+
+OLLAMA_URL = "http://localhost:11434"
+OLLAMA_MODEL = "llama3.1:8b"
+
+
+def ollama_available():
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/version", timeout=2)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+
+def local_llm_complete(prompt, system=None, model=OLLAMA_MODEL, timeout=30):
+    """Send a prompt to a locally-running Ollama model and return its text response."""
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    if system:
+        payload["system"] = system
+    response = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json().get("response", "").strip()
+
+
+# ---------------------------------------------------------------------------
 # 2) Buy-in worth check / 3) Sell timing - combined signal
 # ---------------------------------------------------------------------------
 
@@ -525,6 +553,27 @@ def quarterly_report_summary(symbol):
         return {"symbol": symbol, "error": "No quarterly data available"}
 
     cols = list(inc.columns)  # most recent first
+
+    # The most recent column can be a partially-populated placeholder -- e.g.
+    # only Diluted EPS reported so far, full income statement not yet
+    # backfilled. Skip forward to the first column where most of the tracked
+    # line items actually have data, so the whole report comes from one
+    # internally-consistent quarter rather than mixing a stale statement with
+    # a fresh EPS figure.
+    def _is_populated(col):
+        values = [_row(inc, name).get(col) for name in _KEY_LINES if _row(inc, name) is not None]
+        non_nan = [v for v in values if not pd.isna(v)]
+        return len(values) > 0 and len(non_nan) >= max(1, len(values) // 2)
+
+    skipped = 0
+    for i, col in enumerate(cols):
+        if _is_populated(col):
+            skipped = i
+            cols = cols[i:]
+            break
+    else:
+        return {"symbol": symbol, "error": "No populated quarterly data available"}
+
     latest_label = cols[0]
     prior_label = cols[1] if len(cols) > 1 else None
     yoy_label = cols[4] if len(cols) > 4 else None
@@ -554,12 +603,20 @@ def quarterly_report_summary(symbol):
             if ocf is not None and capex is not None:
                 fcf_latest = ocf + capex  # capex is usually negative
 
-    return {
+    result = {
         "symbol": symbol,
         "latest_quarter_end": str(latest_label.date()) if hasattr(latest_label, "date") else str(latest_label),
         "lines": lines,
         "free_cash_flow_latest_quarter": fcf_latest,
     }
+    if skipped > 0:
+        result["note"] = (
+            f"This data source is missing full financial-statement detail for the "
+            f"{skipped} most recent quarter(s) -- showing the latest quarter with "
+            f"complete figures instead. Check the company's own investor relations "
+            f"filings for anything more current."
+        )
+    return result
 
 
 def print_quarterly_report_summary(symbol):
@@ -568,6 +625,8 @@ def print_quarterly_report_summary(symbol):
         print(f"{symbol}: {r['error']}")
         return
     print(f"{symbol} - quarter ended {r['latest_quarter_end']}")
+    if r.get("note"):
+        print(f"  NOTE: {r['note']}")
     for l in r["lines"]:
         qoq = f"{l['qoq_change_pct']:+.1f}% QoQ" if l["qoq_change_pct"] is not None else "QoQ n/a"
         yoy = f"{l['yoy_change_pct']:+.1f}% YoY" if l["yoy_change_pct"] is not None else "YoY n/a"

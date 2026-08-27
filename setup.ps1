@@ -1,5 +1,5 @@
 # One-step setup for the Family Stock Tracker (Windows / PowerShell).
-# Creates a virtual environment, installs dependencies, and prepares a .env file.
+# Creates a virtual environment and installs dependencies.
 
 $ErrorActionPreference = "Stop"
 
@@ -10,16 +10,11 @@ Write-Host "Installing dependencies..."
 & ".venv\Scripts\python.exe" -m pip install --upgrade pip --quiet
 & ".venv\Scripts\python.exe" -m pip install -r requirements.txt --quiet
 
-if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-    Write-Host ""
-    Write-Host "Created .env from .env.example."
-    Write-Host "Edit .env and add your ANTHROPIC_API_KEY to enable the chat assistant."
-} else {
-    Write-Host ".env already exists -- leaving it as is."
-}
-
 Write-Host ""
 Write-Host "Setup complete. To run the dashboard:"
 Write-Host "  .venv\Scripts\Activate.ps1"
 Write-Host "  streamlit run app.py"
+Write-Host ""
+Write-Host "Optional: to enable Today's Briefing (needs Ollama running locally):"
+Write-Host "  winget install Ollama.Ollama"
+Write-Host "  ollama pull llama3.1:8b"

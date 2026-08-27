@@ -1,22 +1,17 @@
-"""Family Stock Tracker -- simple, large-print dashboard + chat.
+"""Family Stock Tracker -- simple, large-print dashboard.
 
 Run with:
     streamlit run app.py
 
-Needs an ANTHROPIC_API_KEY for the chat box (put it in a local .env file,
-see .env.example). The dashboard itself works without any API key.
+Today's Briefing uses a local Ollama model (free, no API key) -- see
+README.md for setup. Everything else works with no setup at all.
 """
 
-import json
-import os
 from datetime import date
 
 import streamlit as st
-from dotenv import load_dotenv
 
 import stock_toolkit as tk
-
-load_dotenv()
 
 st.set_page_config(page_title="Family Stock Tracker", page_icon="📈", layout="wide")
 
@@ -134,21 +129,9 @@ if not st.session_state.watchlist:
 
 
 # ---------------------------------------------------------------------------
-# AI setup, shared by the daily briefing and the chat assistant below
+# Today's Briefing -- why each watchlist stock moved, in plain English.
+# Uses a local Ollama model (free, private, no API key) instead of a paid API.
 # ---------------------------------------------------------------------------
-api_key = os.environ.get("ANTHROPIC_API_KEY")
-# .env.example ships with a literal placeholder -- treat an unfilled-in
-# placeholder the same as "no key set" instead of trying it and getting a
-# confusing 401 from the API.
-if api_key and not api_key.startswith("sk-ant-"):
-    api_key = None
-client = None
-if api_key:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-
-
 def generate_daily_move_explanation(symbol, data):
     """One honest, plain-English sentence explaining today's price move, or None."""
     move = data["price_move"]
@@ -167,19 +150,14 @@ def generate_daily_move_explanation(symbol, data):
         "If none of the headlines look like a real stock-specific catalyst, say plainly that it "
         "looks like the stock is just moving with the broader market, rather than inventing a reason."
     )
-    response = client.messages.create(
-        model="claude-opus-5",
-        max_tokens=200,
-        output_config={"effort": "low"},
-        system=(
-            "You write very short, honest, plain-language explanations of daily stock price "
-            "moves for a non-technical family member. Never invent a news catalyst that isn't "
-            "supported by the provided headlines -- it's fine and expected to say a move looks "
-            "like broad market noise with no specific cause."
-        ),
-        messages=[{"role": "user", "content": prompt}],
+    system = (
+        "You write very short, honest, plain-language explanations of daily stock price "
+        "moves for a non-technical family member. Never invent a news catalyst that isn't "
+        "supported by the provided headlines -- it's fine and expected to say a move looks "
+        "like broad market noise with no specific cause. Respond with just the one sentence, "
+        "no preamble."
     )
-    explanation = "".join(b.text for b in response.content if b.type == "text").strip()
+    explanation = tk.local_llm_complete(prompt, system=system)
     return move["change_pct"], explanation
 
 
@@ -190,14 +168,12 @@ def cached_daily_briefing(symbol, cache_date):
     return {"change_pct": change_pct, "explanation": explanation}
 
 
-# ---------------------------------------------------------------------------
-# Today's Briefing -- why each watchlist stock moved, in plain English
-# ---------------------------------------------------------------------------
 st.subheader("📰 Today's Briefing")
-if not client:
+if not tk.ollama_available():
     st.info(
-        "Add an Anthropic API key to `.env` to enable Today's Briefing and the chat "
-        "assistant below (see `.env.example`). Everything else on this page works without it."
+        "Today's Briefing needs [Ollama](https://ollama.com) running locally with the "
+        f"`{tk.OLLAMA_MODEL}` model (`ollama pull {tk.OLLAMA_MODEL}`). "
+        "Everything else on this page works without it."
     )
 else:
     today_str = date.today().isoformat()
@@ -335,6 +311,8 @@ with tab_report:
         st.write(quarterly["error"])
     else:
         st.write(f"Quarter ended **{quarterly['latest_quarter_end']}**")
+        if quarterly.get("note"):
+            st.warning(quarterly["note"])
         rows = []
         for l in quarterly["lines"]:
             rows.append({
@@ -381,143 +359,3 @@ with tab_compare:
         compare_rows = compare_df.reset_index().to_dict("records")
         render_table(compare_rows, columns=["symbol"] + list(compare_df.columns))
 
-
-# ---------------------------------------------------------------------------
-# Chat -- ask questions in plain English, answered from real data via tools
-# ---------------------------------------------------------------------------
-st.divider()
-st.header("💬 Ask a question")
-
-if not client:
-    st.warning(
-        "The chat assistant needs an Anthropic API key -- see the note above Today's Briefing."
-    )
-else:
-    from anthropic import beta_tool
-
-    watchlist_symbols = [w["symbol"] for w in st.session_state.watchlist]
-
-    @beta_tool
-    def research_stock(symbol: str) -> str:
-        """Look up a company's profile, sector, and recent news headlines.
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.research(symbol)))
-
-    @beta_tool
-    def find_ticker_symbol(company_name: str) -> str:
-        """Find the ticker symbol for a company given its name.
-
-        Args:
-            company_name: A company name, e.g. "Apple" or "Tencent" or "Moutai".
-        """
-        return json.dumps(tk.to_jsonable(tk.search_symbol(company_name)))
-
-    @beta_tool
-    def get_buy_sell_signal(symbol: str) -> str:
-        """Get a buy/sell/hold signal for a stock, with the reasons behind it (valuation, momentum, growth).
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.buy_sell_signal(symbol)))
-
-    @beta_tool
-    def get_risk_scan(symbol: str) -> str:
-        """Scan a stock for risk factors: volatility, leverage, liquidity, drawdown, short interest.
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.risk_scan(symbol)))
-
-    @beta_tool
-    def get_long_term_value_score(symbol: str) -> str:
-        """Check whether a stock fits common long-term/value-investing criteria (ROE, margins, debt, growth).
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.long_term_value_score(symbol)))
-
-    @beta_tool
-    def compare_multiple_stocks(symbols: list[str]) -> str:
-        """Compare several stocks side by side on valuation, growth, and risk metrics.
-
-        Args:
-            symbols: List of ticker symbols to compare, e.g. ["AAPL", "MSFT"].
-        """
-        df = tk.compare_stocks(symbols)
-        return df.to_json(orient="index")
-
-    @beta_tool
-    def get_quarterly_report(symbol: str) -> str:
-        """Get the most recent quarterly earnings, with quarter-over-quarter and year-over-year change.
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.quarterly_report_summary(symbol)))
-
-    @beta_tool
-    def get_todays_price_move_and_news(symbol: str) -> str:
-        """Get today's price change plus the most recent news headlines for a stock --
-        use this to explain why a stock moved today.
-
-        Args:
-            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
-        """
-        return json.dumps(tk.to_jsonable(tk.daily_briefing_data(symbol)))
-
-    TOOLS = [
-        research_stock, find_ticker_symbol, get_buy_sell_signal, get_risk_scan,
-        get_long_term_value_score, compare_multiple_stocks, get_quarterly_report,
-        get_todays_price_move_and_news,
-    ]
-
-    SYSTEM_PROMPT = (
-        "You are a friendly family financial research assistant. The user may be an "
-        "older adult who is not familiar with financial jargon or technology. "
-        "Answer in plain, simple, warm language -- short sentences, no jargon without "
-        "explaining it, no long lists unless asked. Always ground your answers in the "
-        "tool data -- never make up numbers. If the user names a company instead of a "
-        "ticker, use find_ticker_symbol first. Their current watchlist is: "
-        f"{', '.join(watchlist_symbols)}. Always end with a brief reminder that this is "
-        "informational, not professional financial advice, when giving a buy/sell opinion."
-    )
-
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-
-    user_question = st.chat_input("Ask about a stock, e.g. 'Should I buy Apple?'")
-    if user_question:
-        st.session_state.chat_history.append({"role": "user", "content": user_question})
-        with st.chat_message("user"):
-            st.write(user_question)
-
-        api_messages = [{"role": "user", "content": user_question}]
-        with st.chat_message("assistant"):
-            with st.spinner("Looking into it..."):
-                runner = client.beta.messages.tool_runner(
-                    model="claude-opus-5",
-                    max_tokens=16000,
-                    output_config={"effort": "medium"},
-                    system=SYSTEM_PROMPT,
-                    tools=TOOLS,
-                    messages=api_messages,
-                )
-                final_message = None
-                for message in runner:
-                    final_message = message
-                answer = ""
-                if final_message is not None:
-                    answer = "".join(
-                        b.text for b in final_message.content if b.type == "text"
-                    )
-                if not answer:
-                    answer = "Sorry, I couldn't come up with an answer just now -- please try asking again."
-            st.write(answer)
-        st.session_state.chat_history.append({"role": "assistant", "content": answer})
