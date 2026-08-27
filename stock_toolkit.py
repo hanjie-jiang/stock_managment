@@ -404,20 +404,101 @@ def score_news_relevance(symbol, name, change_pct, news_items):
     return out
 
 
+def is_fund(symbol):
+    """True for ETFs/mutual funds, where "company news" doesn't really apply --
+    a diversified fund's move reflects its underlying holdings, not its own catalyst.
+    """
+    return get_ticker(symbol).info.get("quoteType") in ("ETF", "MUTUALFUND")
+
+
+def get_fund_top_holdings(symbol, top_n=8):
+    """Top holdings (symbol, name, weight) for a fund, or None if unavailable."""
+    try:
+        holdings_df = get_ticker(symbol).funds_data.top_holdings
+    except Exception:
+        return None
+    if holdings_df is None or holdings_df.empty:
+        return None
+    return [
+        {"symbol": sym, "name": row.get("Name"), "weight": float(row.get("Holding Percent"))}
+        for sym, row in holdings_df.head(top_n).iterrows()
+    ]
+
+
+def explain_fund_move(symbol, name, fund_change_pct):
+    """Deterministic (no LLM) explanation for a fund's move: which top holdings
+    moved the most today, weighted by their size in the fund. More defensible
+    than free-form news search, which is the wrong tool for a diversified fund --
+    there usually isn't a single "catalyst" the way there is for one company.
+
+    Returns {"explanation": str, "holdings": [...]} -- "holdings" is the full
+    per-holding data (weight, today's move, weighted contribution) for an audit
+    trail, same spirit as the "considered" headlines list for single stocks.
+    """
+    holdings = get_fund_top_holdings(symbol)
+    if not holdings:
+        return {
+            "explanation": "This is a fund, and holdings data wasn't available to break down today's move.",
+            "holdings": [],
+        }
+
+    contributions = []
+    for h in holdings:
+        move = daily_price_move(h["symbol"])
+        if move and move.get("change_pct") is not None:
+            contributions.append({
+                **h,
+                "change_pct": move["change_pct"],
+                "weighted_contribution": h["weight"] * move["change_pct"],
+            })
+
+    if not contributions:
+        return {
+            "explanation": "This is a fund, and today's per-holding price moves weren't available to break it down.",
+            "holdings": holdings,
+        }
+
+    contributions.sort(key=lambda c: abs(c["weighted_contribution"]), reverse=True)
+    top = contributions[:3]
+    parts = [
+        f"{c['name']} ({c['symbol']}, {c['weight']*100:.1f}% of the fund) {c['change_pct']:+.1f}%"
+        for c in top
+    ]
+    explanation = (
+        f"{name} is a diversified fund, so it moves with its underlying holdings rather than "
+        f"its own news. Today's largest weighted movers among its top holdings: {'; '.join(parts)}."
+    )
+    return {"explanation": explanation, "holdings": contributions}
+
+
 def explain_daily_move(symbol, name, news_limit=6):
     """Two-stage, auditable explanation of today's price move:
 
     1. Score each recent headline's relevance to THIS company's move, independently.
     2. Synthesize a one-sentence explanation using only headlines judged relevant.
 
-    Returns {"change_pct": float|None, "explanation": str|None, "considered": [...]} --
-    "considered" is the full per-headline scoring trail, useful for showing your work
-    rather than asking anyone to just trust a single free-form answer.
+    For funds/ETFs, skips straight to a holdings-based breakdown instead (see
+    explain_fund_move) -- news-relevance screening is the wrong tool for a
+    diversified fund, which doesn't have a single-company catalyst to find.
+
+    Returns {"change_pct": float|None, "explanation": str|None, "considered": [...],
+    "holdings": [...]} -- "considered"/"holdings" are the audit trail (whichever
+    applies), useful for showing your work rather than asking anyone to just
+    trust a single free-form answer.
     """
     data = daily_briefing_data(symbol, news_limit=news_limit)
     move = data["price_move"]
     if move is None or move.get("change_pct") is None:
-        return {"change_pct": None, "explanation": None, "considered": []}
+        return {"change_pct": None, "explanation": None, "considered": [], "holdings": []}
+
+    if is_fund(symbol):
+        result = explain_fund_move(symbol, name, move["change_pct"])
+        return {
+            "change_pct": move["change_pct"],
+            "explanation": result["explanation"],
+            "considered": [],
+            "holdings": result["holdings"],
+        }
 
     scored = score_news_relevance(symbol, name, move["change_pct"], data["news"])
     relevant = [s for s in scored if s["relevant"]]
@@ -448,7 +529,7 @@ def explain_daily_move(symbol, name, news_limit=6):
         )
         explanation = local_llm_complete(prompt, system=system)
 
-    return {"change_pct": move["change_pct"], "explanation": explanation, "considered": scored}
+    return {"change_pct": move["change_pct"], "explanation": explanation, "considered": scored, "holdings": []}
 
 
 # ---------------------------------------------------------------------------

@@ -5,3 +5,4 @@ __pycache__/
 .streamlit/secrets.toml
 briefing_cache.json
 run_daily_briefing.log
+.claude/

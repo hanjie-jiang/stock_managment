@@ -189,6 +189,7 @@ def render_briefing_entry(w, briefing):
         unsafe_allow_html=True,
     )
     considered = briefing.get("considered") or []
+    holdings = briefing.get("holdings") or []
     if considered:
         used = sum(c["relevant"] for c in considered)
         with st.expander(f"Show the reasoning ({used}/{len(considered)} headlines used)"):
@@ -198,6 +199,14 @@ def render_briefing_entry(w, briefing):
                 publisher = md_escape_dollars(c["headline"].get("publisher"))
                 st.markdown(f"**[{mark}]** {title} *({publisher})*")
                 st.caption(md_escape_dollars(c["reason"]))
+    elif holdings:
+        with st.expander(f"Show top holdings ({len(holdings)})"):
+            rows = [{
+                "Holding": f"{h['name']} ({h['symbol']})",
+                "% of fund": f"{h['weight']*100:.1f}%",
+                "Today's move": f"{h['change_pct']:+.1f}%" if h.get("change_pct") is not None else "n/a",
+            } for h in holdings]
+            render_table(rows)
     st.markdown("<hr style='margin:0.3em 0;'>", unsafe_allow_html=True)
 
 
