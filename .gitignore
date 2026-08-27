@@ -3,3 +3,5 @@
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+briefing_cache.json
+run_daily_briefing.log

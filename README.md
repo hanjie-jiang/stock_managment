@@ -60,6 +60,25 @@ ollama pull llama3.1:8b
 Everything else on the dashboard works without this -- Today's Briefing just
 shows a setup reminder instead until Ollama is running.
 
+**If your watchlist is large (20+ stocks):** Today's Briefing needs 2 local-LLM
+calls per stock, which adds up. Instead of generating it live on every page
+load, pre-generate it once a day as a background job:
+
+```bash
+python run_daily_briefing.py
+```
+
+The dashboard then reads instantly from the cache it writes
+(`briefing_cache.json`). Anything missing/stale can still be generated
+on-demand from a button in the app. To run this automatically every morning
+on Windows, register a scheduled task (once):
+
+```powershell
+schtasks /create /tn "StockTrackerBriefing" /tr "'C:\path\to\.venv\Scripts\python.exe' 'C:\path\to\run_daily_briefing.py'" /sc daily /st 07:00
+```
+
+(adjust the paths to match your setup; remove with `schtasks /delete /tn "StockTrackerBriefing"`)
+
 ## Running it
 
 **Dashboard (recommended for most family members):**
@@ -87,11 +106,22 @@ jupyter notebook notebooks/stock_managment.ipynb
 The dashboard's search box handles this automatically -- these formats
 only matter if you're using `stock_toolkit.py` directly.
 
+## Watchlists of any size
+
+The watchlist persists to `watchlist.json` (survives restarts) and is grouped
+by sector everywhere -- sidebar, Compare tab, Today's Briefing -- so it stays
+usable whether you're tracking 5 stocks or 50+. Sector/industry is looked up
+once per stock (when it's added) and cached in that file, not refetched on
+every page load.
+
 ## Project files
 
 | File | Purpose |
 |---|---|
 | `stock_toolkit.py` | Core data + analysis functions, reused by both the app and the notebook |
 | `app.py` | Streamlit dashboard |
+| `watchlist_store.py` | Persists the watchlist (symbol/name/sector/industry) to `watchlist.json` |
+| `briefing_store.py` | Reads/writes the Today's Briefing cache (`briefing_cache.json`) |
+| `run_daily_briefing.py` | Background job: pre-generates Today's Briefing for the whole watchlist |
 | `notebooks/stock_managment.ipynb` | Notebook walkthrough of all capabilities |
 | `requirements.txt` | Python dependencies |

@@ -10,6 +10,8 @@ not investment advice - numbers should be sanity-checked against the
 company's actual filings before anyone acts on them.
 """
 
+import time
+
 import numpy as np
 import pandas as pd
 import requests
@@ -23,8 +25,32 @@ pd.set_option("display.max_columns", 20)
 # Core data access
 # ---------------------------------------------------------------------------
 
+_TICKER_CACHE = {}  # symbol -> (Ticker object, fetch_time)
+_TICKER_CACHE_TTL = 900  # 15 minutes
+
+
 def get_ticker(symbol):
-    return yf.Ticker(symbol)
+    """Return a yf.Ticker for symbol, reusing the same object for a while.
+
+    A fresh yf.Ticker() per call means every stock_toolkit function that
+    touches the same symbol (key_stats, technical_snapshot, risk_scan, ...)
+    re-fetches .info/.history() independently -- fine at a handful of
+    stocks, wasteful and slow at 50+. Reusing the object lets yfinance's
+    own per-object caching eliminate that duplication.
+    """
+    now = time.time()
+    cached = _TICKER_CACHE.get(symbol)
+    if cached and (now - cached[1]) < _TICKER_CACHE_TTL:
+        return cached[0]
+    t = yf.Ticker(symbol)
+    _TICKER_CACHE[symbol] = (t, now)
+    return t
+
+
+def get_sector_industry(symbol):
+    """Lightweight sector/industry lookup (no news fetch), for grouping a watchlist."""
+    info = get_ticker(symbol).info
+    return {"sector": info.get("sector"), "industry": info.get("industry")}
 
 
 def search_symbol(query, limit=5):

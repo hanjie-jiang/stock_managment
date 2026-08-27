@@ -7,11 +7,14 @@ Today's Briefing uses a local Ollama model (free, no API key) -- see
 README.md for setup. Everything else works with no setup at all.
 """
 
+from collections import defaultdict
 from datetime import date
 
 import streamlit as st
 
+import briefing_store as bs
 import stock_toolkit as tk
+import watchlist_store as wls
 
 st.set_page_config(page_title="Family Stock Tracker", page_icon="📈", layout="wide")
 
@@ -87,33 +90,44 @@ def render_table(rows, columns=None):
 
 
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = [
-        {"symbol": "AAPL", "name": "Apple Inc."},
-        {"symbol": "MSFT", "name": "Microsoft Corporation"},
-        {"symbol": "600519.SS", "name": "Kweichow Moutai"},
-        {"symbol": "0700.HK", "name": "Tencent Holdings"},
-        {"symbol": "BABA", "name": "Alibaba Group"},
-    ]
+    st.session_state.watchlist = wls.load_watchlist()
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+
+def save_watchlist():
+    wls.save_watchlist(st.session_state.watchlist)
+
+
+def group_by_sector(watchlist):
+    """Group watchlist entries by sector, preserving each group's insertion order."""
+    groups = defaultdict(list)
+    for item in watchlist:
+        groups[item.get("sector") or "Other / Unclassified"].append(item)
+    return dict(groups)
+
 
 st.title("📈 Family Stock Tracker")
 
 
 # ---------------------------------------------------------------------------
-# Sidebar: watchlist management
+# Sidebar: watchlist management, grouped by sector (this list can get long --
+# 50+ stocks is a real use case, not just 5)
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Your stocks")
+    st.header(f"Your stocks ({len(st.session_state.watchlist)})")
 
-    for item in list(st.session_state.watchlist):
-        cols = st.columns([4, 1])
-        cols[0].write(f"**{item['name']}**  \n{item['symbol']}")
-        if cols[1].button("✕", key=f"remove_{item['symbol']}"):
-            st.session_state.watchlist = [
-                w for w in st.session_state.watchlist if w["symbol"] != item["symbol"]
-            ]
-            st.rerun()
+    for sector, items in sorted(group_by_sector(st.session_state.watchlist).items()):
+        with st.expander(f"{sector} ({len(items)})"):
+            for item in items:
+                cols = st.columns([4, 1])
+                cols[0].write(f"**{item['name']}**  \n{item['symbol']}")
+                if cols[1].button("✕", key=f"remove_{item['symbol']}"):
+                    st.session_state.watchlist = [
+                        w for w in st.session_state.watchlist if w["symbol"] != item["symbol"]
+                    ]
+                    save_watchlist()
+                    st.rerun()
 
     st.divider()
     st.subheader("Add a stock")
@@ -126,7 +140,15 @@ with st.sidebar:
             label = f"{m['name']} ({m['symbol']}, {m['exchange']})"
             if st.button(f"Add {label}", key=f"add_{m['symbol']}"):
                 if not any(w["symbol"] == m["symbol"] for w in st.session_state.watchlist):
-                    st.session_state.watchlist.append({"symbol": m["symbol"], "name": m["name"]})
+                    with st.spinner("Looking up sector..."):
+                        sector_info = tk.get_sector_industry(m["symbol"])
+                    st.session_state.watchlist.append({
+                        "symbol": m["symbol"],
+                        "name": m["name"],
+                        "sector": sector_info["sector"],
+                        "industry": sector_info["industry"],
+                    })
+                    save_watchlist()
                 st.rerun()
 
 
@@ -137,11 +159,46 @@ if not st.session_state.watchlist:
 
 # ---------------------------------------------------------------------------
 # Today's Briefing -- why each watchlist stock moved, in plain English.
-# Uses a local Ollama model (free, private, no API key) instead of a paid API.
+# Reads from a cache pre-computed by run_daily_briefing.py (see README) so
+# opening the dashboard is instant regardless of watchlist size -- at 50+
+# stocks, generating live on every page load (2 local-LLM calls each) would
+# take many minutes. Anything missing/stale can still be generated on demand.
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
-def cached_daily_briefing(symbol, name, cache_date):
-    return tk.explain_daily_move(symbol, name)
+def render_briefing_entry(w, briefing):
+    sym = w["symbol"]
+    change_pct = briefing["change_pct"]
+    if change_pct is None:
+        arrow, color, change_label = "→", "#666666", "n/a"
+    elif change_pct > 0:
+        arrow, color, change_label = "↑", "#155724", f"+{change_pct:.1f}%"
+    elif change_pct < 0:
+        arrow, color, change_label = "↓", "#721c24", f"{change_pct:.1f}%"
+    else:
+        arrow, color, change_label = "→", "#666666", "0.0%"
+    # Content inside a raw HTML block (this <div>) isn't run through inline
+    # markdown/math parsing, so $ here doesn't need escaping (and escaping it
+    # shows a literal backslash instead) -- unlike the native st.markdown()
+    # calls in the expander below, which do need it.
+    explanation_text = briefing["explanation"] or "No explanation available."
+    st.markdown(
+        f"<div style='padding:0.7em 0 0.2em 0;'>"
+        f"<span style='font-size:22px;font-weight:700;color:{color};'>"
+        f"{arrow} {w['name']} ({sym})&nbsp;&nbsp;{change_label}</span><br>"
+        f"<span style='font-size:18px;'>{explanation_text}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    considered = briefing.get("considered") or []
+    if considered:
+        used = sum(c["relevant"] for c in considered)
+        with st.expander(f"Show the reasoning ({used}/{len(considered)} headlines used)"):
+            for c in considered:
+                mark = "USED" if c["relevant"] else "skipped"
+                title = md_escape_dollars(c["headline"].get("title"))
+                publisher = md_escape_dollars(c["headline"].get("publisher"))
+                st.markdown(f"**[{mark}]** {title} *({publisher})*")
+                st.caption(md_escape_dollars(c["reason"]))
+    st.markdown("<hr style='margin:0.3em 0;'>", unsafe_allow_html=True)
 
 
 st.subheader("📰 Today's Briefing")
@@ -153,45 +210,47 @@ if not tk.ollama_available():
     )
 else:
     today_str = date.today().isoformat()
-    with st.spinner("Checking today's news for your watchlist..."):
-        for w in st.session_state.watchlist:
-            sym = w["symbol"]
-            try:
-                briefing = cached_daily_briefing(sym, w["name"], today_str)
-            except Exception as e:
-                briefing = {"change_pct": None, "explanation": f"Couldn't fetch a briefing right now ({e}).", "considered": []}
-            change_pct = briefing["change_pct"]
-            if change_pct is None:
-                arrow, color, change_label = "→", "#666666", "n/a"
-            elif change_pct > 0:
-                arrow, color, change_label = "↑", "#155724", f"+{change_pct:.1f}%"
-            elif change_pct < 0:
-                arrow, color, change_label = "↓", "#721c24", f"{change_pct:.1f}%"
-            else:
-                arrow, color, change_label = "→", "#666666", "0.0%"
-            # Note: content inside a raw HTML block (this whole <div>) isn't run through
-            # inline markdown/math parsing, so $ here doesn't need escaping (and escaping
-            # it shows a literal backslash instead) -- unlike the native st.markdown() calls
-            # in the expander below, which do need it.
-            explanation_text = briefing["explanation"] or "No explanation available."
-            st.markdown(
-                f"<div style='padding:0.7em 0 0.2em 0;'>"
-                f"<span style='font-size:22px;font-weight:700;color:{color};'>"
-                f"{arrow} {w['name']} ({sym})&nbsp;&nbsp;{change_label}</span><br>"
-                f"<span style='font-size:18px;'>{explanation_text}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            considered = briefing.get("considered") or []
-            if considered:
-                with st.expander(f"Show the reasoning ({sum(c['relevant'] for c in considered)}/{len(considered)} headlines used)"):
-                    for c in considered:
-                        mark = "USED" if c["relevant"] else "skipped"
-                        title = md_escape_dollars(c["headline"].get("title"))
-                        publisher = md_escape_dollars(c["headline"].get("publisher"))
-                        st.markdown(f"**[{mark}]** {title} *({publisher})*")
-                        st.caption(md_escape_dollars(c["reason"]))
-            st.markdown("<hr style='margin:0.3em 0;'>", unsafe_allow_html=True)
+    ready, missing = {}, []
+    for w in st.session_state.watchlist:
+        cached = bs.get_briefing(w["symbol"], today_str)
+        if cached:
+            ready[w["symbol"]] = cached
+        else:
+            missing.append(w)
+
+    if missing:
+        st.caption(
+            f"{len(ready)}/{len(st.session_state.watchlist)} briefings ready for today. "
+            f"{len(missing)} missing (run `python run_daily_briefing.py` to pre-generate all "
+            "of them in the background, or generate just the missing ones now)."
+        )
+        if st.button(f"Generate the {len(missing)} missing briefings now"):
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            progress = st.progress(0.0, text="Starting...")
+            done = 0
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                futures = {ex.submit(tk.explain_daily_move, w["symbol"], w["name"]): w for w in missing}
+                for fut in as_completed(futures):
+                    w = futures[fut]
+                    done += 1
+                    try:
+                        bs.set_briefing(w["symbol"], today_str, fut.result())
+                    except Exception:
+                        pass
+                    progress.progress(done / len(missing), text=f"{done}/{len(missing)}: {w['symbol']}")
+            progress.empty()
+            st.rerun()
+
+    for sector, items in sorted(group_by_sector(st.session_state.watchlist).items()):
+        sector_ready = sum(1 for w in items if w["symbol"] in ready)
+        with st.expander(f"{sector} ({sector_ready}/{len(items)} ready)", expanded=len(items) <= 3):
+            for w in items:
+                sym = w["symbol"]
+                if sym in ready:
+                    render_briefing_entry(w, ready[sym])
+                else:
+                    st.markdown(f"**{w['name']} ({sym})** -- not generated yet.")
 
 st.divider()
 
@@ -321,11 +380,17 @@ with tab_compare:
         v = row.get(col)
         return None if pd.isna(v) else v
 
-    st.write("Comparing everything in your watchlist:")
-    all_symbols = [w["symbol"] for w in st.session_state.watchlist]
-    compare_df = tk.compare_stocks(all_symbols)
+    @st.cache_data(ttl=900, show_spinner=False)
+    def load_compare_data(symbols_tuple):
+        return tk.compare_stocks(list(symbols_tuple))
 
-    friendly_rows = []
+    st.write("Comparing everything in your watchlist, grouped by sector:")
+    all_symbols = [w["symbol"] for w in st.session_state.watchlist]
+    sector_by_symbol = {w["symbol"]: w.get("sector") or "Other / Unclassified" for w in st.session_state.watchlist}
+    with st.spinner(f"Fetching comparison data for {len(all_symbols)} stocks..."):
+        compare_df = load_compare_data(tuple(all_symbols))
+
+    rows_by_sector = defaultdict(list)
     for sym, row in compare_df.iterrows():
         price = _val(row, "price")
         pe = _val(row, "trailing_pe")
@@ -334,7 +399,7 @@ with tab_compare:
         div_yield = _val(row, "dividend_yield")
         beta = _val(row, "beta")
         recommendation = _val(row, "analyst_recommendation")
-        friendly_rows.append({
+        rows_by_sector[sector_by_symbol.get(sym, "Other / Unclassified")].append({
             "Stock": f"{row['name']} ({sym})",
             "Price": f"{price:,.2f}" if price is not None else "n/a",
             "P/E ratio": f"{pe:.1f}" if pe is not None else "n/a",
@@ -344,9 +409,12 @@ with tab_compare:
             "Risk (beta)": f"{beta:.2f}" if beta is not None else "n/a",
             "Analyst view": recommendation.replace("_", " ").title() if recommendation else "n/a",
         })
-    render_table(friendly_rows)
 
-    with st.expander("Show full data (all metrics)"):
+    for sector in sorted(rows_by_sector):
+        with st.expander(f"{sector} ({len(rows_by_sector[sector])})", expanded=len(rows_by_sector) <= 3):
+            render_table(rows_by_sector[sector])
+
+    with st.expander("Show full data (all metrics, ungrouped)"):
         compare_rows = compare_df.reset_index().to_dict("records")
         render_table(compare_rows, columns=["symbol"] + list(compare_df.columns))
 
