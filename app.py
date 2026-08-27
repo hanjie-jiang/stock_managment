@@ -41,6 +41,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+def md_escape_dollars(text):
+    """Escape literal $ so st.markdown doesn't mistake e.g. "HK$300...HK$445"
+    for a paired LaTeX math span (a real bug this app hit with real headlines).
+    """
+    return (text or "").replace("$", "\\$")
+
+
 def render_table(rows, columns=None):
     """Render a list of dicts as a plain HTML table.
 
@@ -132,40 +139,9 @@ if not st.session_state.watchlist:
 # Today's Briefing -- why each watchlist stock moved, in plain English.
 # Uses a local Ollama model (free, private, no API key) instead of a paid API.
 # ---------------------------------------------------------------------------
-def generate_daily_move_explanation(symbol, data):
-    """One honest, plain-English sentence explaining today's price move, or None."""
-    move = data["price_move"]
-    if move is None or move.get("change_pct") is None:
-        return None, None
-    news_lines = "\n".join(
-        f"- {n['title']} ({n['publisher']})" for n in data["news"] if n.get("title")
-    ) or "No recent news found."
-    prompt = (
-        f"Stock: {symbol}\n"
-        f"Price change: {move['change_pct']:+.2f}% (from {move['prev_close']:.2f} to {move['close']:.2f})\n"
-        f"Day range: {move['day_low']:.2f} - {move['day_high']:.2f}\n\n"
-        f"Recent news headlines:\n{news_lines}\n\n"
-        "In ONE short, plain-English sentence, explain why this stock likely moved today. "
-        "Ground it in the headlines above only if they plausibly explain a move of this size. "
-        "If none of the headlines look like a real stock-specific catalyst, say plainly that it "
-        "looks like the stock is just moving with the broader market, rather than inventing a reason."
-    )
-    system = (
-        "You write very short, honest, plain-language explanations of daily stock price "
-        "moves for a non-technical family member. Never invent a news catalyst that isn't "
-        "supported by the provided headlines -- it's fine and expected to say a move looks "
-        "like broad market noise with no specific cause. Respond with just the one sentence, "
-        "no preamble."
-    )
-    explanation = tk.local_llm_complete(prompt, system=system)
-    return move["change_pct"], explanation
-
-
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def cached_daily_briefing(symbol, cache_date):
-    briefing_data = tk.daily_briefing_data(symbol)
-    change_pct, explanation = generate_daily_move_explanation(symbol, briefing_data)
-    return {"change_pct": change_pct, "explanation": explanation}
+def cached_daily_briefing(symbol, name, cache_date):
+    return tk.explain_daily_move(symbol, name)
 
 
 st.subheader("📰 Today's Briefing")
@@ -181,9 +157,9 @@ else:
         for w in st.session_state.watchlist:
             sym = w["symbol"]
             try:
-                briefing = cached_daily_briefing(sym, today_str)
+                briefing = cached_daily_briefing(sym, w["name"], today_str)
             except Exception as e:
-                briefing = {"change_pct": None, "explanation": f"Couldn't fetch a briefing right now ({e})."}
+                briefing = {"change_pct": None, "explanation": f"Couldn't fetch a briefing right now ({e}).", "considered": []}
             change_pct = briefing["change_pct"]
             if change_pct is None:
                 arrow, color, change_label = "→", "#666666", "n/a"
@@ -193,14 +169,29 @@ else:
                 arrow, color, change_label = "↓", "#721c24", f"{change_pct:.1f}%"
             else:
                 arrow, color, change_label = "→", "#666666", "0.0%"
+            # Note: content inside a raw HTML block (this whole <div>) isn't run through
+            # inline markdown/math parsing, so $ here doesn't need escaping (and escaping
+            # it shows a literal backslash instead) -- unlike the native st.markdown() calls
+            # in the expander below, which do need it.
+            explanation_text = briefing["explanation"] or "No explanation available."
             st.markdown(
-                f"<div style='padding:0.7em 0;border-bottom:1px solid #eee;'>"
+                f"<div style='padding:0.7em 0 0.2em 0;'>"
                 f"<span style='font-size:22px;font-weight:700;color:{color};'>"
                 f"{arrow} {w['name']} ({sym})&nbsp;&nbsp;{change_label}</span><br>"
-                f"<span style='font-size:18px;'>{briefing['explanation'] or 'No explanation available.'}</span>"
+                f"<span style='font-size:18px;'>{explanation_text}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
+            considered = briefing.get("considered") or []
+            if considered:
+                with st.expander(f"Show the reasoning ({sum(c['relevant'] for c in considered)}/{len(considered)} headlines used)"):
+                    for c in considered:
+                        mark = "USED" if c["relevant"] else "skipped"
+                        title = md_escape_dollars(c["headline"].get("title"))
+                        publisher = md_escape_dollars(c["headline"].get("publisher"))
+                        st.markdown(f"**[{mark}]** {title} *({publisher})*")
+                        st.caption(md_escape_dollars(c["reason"]))
+            st.markdown("<hr style='margin:0.3em 0;'>", unsafe_allow_html=True)
 
 st.divider()
 
