@@ -504,6 +504,7 @@ else:
                 runner = client.beta.messages.tool_runner(
                     model="claude-opus-5",
                     max_tokens=16000,
+                    output_config={"effort": "medium"},
                     system=SYSTEM_PROMPT,
                     tools=TOOLS,
                     messages=api_messages,
