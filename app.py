@@ -99,11 +99,13 @@ def save_watchlist():
     wls.save_watchlist(st.session_state.watchlist)
 
 
-def group_by_sector(watchlist):
-    """Group watchlist entries by sector, preserving each group's insertion order."""
+def group_by_industry(watchlist):
+    """Group watchlist entries by industry (more specific than sector -- e.g.
+    "Communication Services" lumps telecom carriers, newspapers, social media,
+    and video game companies together; industry actually separates them)."""
     groups = defaultdict(list)
     for item in watchlist:
-        groups[item.get("sector") or "Other / Unclassified"].append(item)
+        groups[item.get("industry") or "Other / Unclassified"].append(item)
     return dict(groups)
 
 
@@ -111,14 +113,14 @@ st.title("📈 Family Stock Tracker")
 
 
 # ---------------------------------------------------------------------------
-# Sidebar: watchlist management, grouped by sector (this list can get long --
+# Sidebar: watchlist management, grouped by industry (this list can get long --
 # 50+ stocks is a real use case, not just 5)
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header(f"Your stocks ({len(st.session_state.watchlist)})")
 
-    for sector, items in sorted(group_by_sector(st.session_state.watchlist).items()):
-        with st.expander(f"{sector} ({len(items)})"):
+    for industry, items in sorted(group_by_industry(st.session_state.watchlist).items()):
+        with st.expander(f"{industry} ({len(items)})"):
             for item in items:
                 cols = st.columns([4, 1])
                 cols[0].write(f"**{item['name']}**  \n{item['symbol']}")
@@ -140,7 +142,7 @@ with st.sidebar:
             label = f"{m['name']} ({m['symbol']}, {m['exchange']})"
             if st.button(f"Add {label}", key=f"add_{m['symbol']}"):
                 if not any(w["symbol"] == m["symbol"] for w in st.session_state.watchlist):
-                    with st.spinner("Looking up sector..."):
+                    with st.spinner("Looking up industry..."):
                         sector_info = tk.get_sector_industry(m["symbol"])
                     st.session_state.watchlist.append({
                         "symbol": m["symbol"],
@@ -251,9 +253,9 @@ else:
             progress.empty()
             st.rerun()
 
-    for sector, items in sorted(group_by_sector(st.session_state.watchlist).items()):
-        sector_ready = sum(1 for w in items if w["symbol"] in ready)
-        with st.expander(f"{sector} ({sector_ready}/{len(items)} ready)", expanded=len(items) <= 3):
+    for industry, items in sorted(group_by_industry(st.session_state.watchlist).items()):
+        industry_ready = sum(1 for w in items if w["symbol"] in ready)
+        with st.expander(f"{industry} ({industry_ready}/{len(items)} ready)", expanded=len(items) <= 3):
             for w in items:
                 sym = w["symbol"]
                 if sym in ready:
@@ -393,13 +395,13 @@ with tab_compare:
     def load_compare_data(symbols_tuple):
         return tk.compare_stocks(list(symbols_tuple))
 
-    st.write("Comparing everything in your watchlist, grouped by sector:")
+    st.write("Comparing everything in your watchlist, grouped by industry:")
     all_symbols = [w["symbol"] for w in st.session_state.watchlist]
-    sector_by_symbol = {w["symbol"]: w.get("sector") or "Other / Unclassified" for w in st.session_state.watchlist}
+    industry_by_symbol = {w["symbol"]: w.get("industry") or "Other / Unclassified" for w in st.session_state.watchlist}
     with st.spinner(f"Fetching comparison data for {len(all_symbols)} stocks..."):
         compare_df = load_compare_data(tuple(all_symbols))
 
-    rows_by_sector = defaultdict(list)
+    rows_by_industry = defaultdict(list)
     for sym, row in compare_df.iterrows():
         price = _val(row, "price")
         pe = _val(row, "trailing_pe")
@@ -408,7 +410,7 @@ with tab_compare:
         div_yield = _val(row, "dividend_yield")
         beta = _val(row, "beta")
         recommendation = _val(row, "analyst_recommendation")
-        rows_by_sector[sector_by_symbol.get(sym, "Other / Unclassified")].append({
+        rows_by_industry[industry_by_symbol.get(sym, "Other / Unclassified")].append({
             "Stock": f"{row['name']} ({sym})",
             "Price": f"{price:,.2f}" if price is not None else "n/a",
             "P/E ratio": f"{pe:.1f}" if pe is not None else "n/a",
@@ -419,9 +421,9 @@ with tab_compare:
             "Analyst view": recommendation.replace("_", " ").title() if recommendation else "n/a",
         })
 
-    for sector in sorted(rows_by_sector):
-        with st.expander(f"{sector} ({len(rows_by_sector[sector])})", expanded=len(rows_by_sector) <= 3):
-            render_table(rows_by_sector[sector])
+    for industry in sorted(rows_by_industry):
+        with st.expander(f"{industry} ({len(rows_by_industry[industry])})", expanded=len(rows_by_industry) <= 3):
+            render_table(rows_by_industry[industry])
 
     with st.expander("Show full data (all metrics, ungrouped)"):
         compare_rows = compare_df.reset_index().to_dict("records")
