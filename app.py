@@ -9,6 +9,7 @@ see .env.example). The dashboard itself works without any API key.
 
 import json
 import os
+from datetime import date
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -130,6 +131,102 @@ with st.sidebar:
 if not st.session_state.watchlist:
     st.info("Add a stock from the left panel to get started.")
     st.stop()
+
+
+# ---------------------------------------------------------------------------
+# AI setup, shared by the daily briefing and the chat assistant below
+# ---------------------------------------------------------------------------
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+# .env.example ships with a literal placeholder -- treat an unfilled-in
+# placeholder the same as "no key set" instead of trying it and getting a
+# confusing 401 from the API.
+if api_key and not api_key.startswith("sk-ant-"):
+    api_key = None
+client = None
+if api_key:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+
+def generate_daily_move_explanation(symbol, data):
+    """One honest, plain-English sentence explaining today's price move, or None."""
+    move = data["price_move"]
+    if move is None or move.get("change_pct") is None:
+        return None, None
+    news_lines = "\n".join(
+        f"- {n['title']} ({n['publisher']})" for n in data["news"] if n.get("title")
+    ) or "No recent news found."
+    prompt = (
+        f"Stock: {symbol}\n"
+        f"Price change: {move['change_pct']:+.2f}% (from {move['prev_close']:.2f} to {move['close']:.2f})\n"
+        f"Day range: {move['day_low']:.2f} - {move['day_high']:.2f}\n\n"
+        f"Recent news headlines:\n{news_lines}\n\n"
+        "In ONE short, plain-English sentence, explain why this stock likely moved today. "
+        "Ground it in the headlines above only if they plausibly explain a move of this size. "
+        "If none of the headlines look like a real stock-specific catalyst, say plainly that it "
+        "looks like the stock is just moving with the broader market, rather than inventing a reason."
+    )
+    response = client.messages.create(
+        model="claude-opus-5",
+        max_tokens=200,
+        output_config={"effort": "low"},
+        system=(
+            "You write very short, honest, plain-language explanations of daily stock price "
+            "moves for a non-technical family member. Never invent a news catalyst that isn't "
+            "supported by the provided headlines -- it's fine and expected to say a move looks "
+            "like broad market noise with no specific cause."
+        ),
+        messages=[{"role": "user", "content": prompt}],
+    )
+    explanation = "".join(b.text for b in response.content if b.type == "text").strip()
+    return move["change_pct"], explanation
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def cached_daily_briefing(symbol, cache_date):
+    briefing_data = tk.daily_briefing_data(symbol)
+    change_pct, explanation = generate_daily_move_explanation(symbol, briefing_data)
+    return {"change_pct": change_pct, "explanation": explanation}
+
+
+# ---------------------------------------------------------------------------
+# Today's Briefing -- why each watchlist stock moved, in plain English
+# ---------------------------------------------------------------------------
+st.subheader("📰 Today's Briefing")
+if not client:
+    st.info(
+        "Add an Anthropic API key to `.env` to enable Today's Briefing and the chat "
+        "assistant below (see `.env.example`). Everything else on this page works without it."
+    )
+else:
+    today_str = date.today().isoformat()
+    with st.spinner("Checking today's news for your watchlist..."):
+        for w in st.session_state.watchlist:
+            sym = w["symbol"]
+            try:
+                briefing = cached_daily_briefing(sym, today_str)
+            except Exception as e:
+                briefing = {"change_pct": None, "explanation": f"Couldn't fetch a briefing right now ({e})."}
+            change_pct = briefing["change_pct"]
+            if change_pct is None:
+                arrow, color, change_label = "→", "#666666", "n/a"
+            elif change_pct > 0:
+                arrow, color, change_label = "↑", "#155724", f"+{change_pct:.1f}%"
+            elif change_pct < 0:
+                arrow, color, change_label = "↓", "#721c24", f"{change_pct:.1f}%"
+            else:
+                arrow, color, change_label = "→", "#666666", "0.0%"
+            st.markdown(
+                f"<div style='padding:0.7em 0;border-bottom:1px solid #eee;'>"
+                f"<span style='font-size:22px;font-weight:700;color:{color};'>"
+                f"{arrow} {w['name']} ({sym})&nbsp;&nbsp;{change_label}</span><br>"
+                f"<span style='font-size:18px;'>{briefing['explanation'] or 'No explanation available.'}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+st.divider()
 
 symbol_options = {f"{w['name']} ({w['symbol']})": w["symbol"] for w in st.session_state.watchlist}
 selected_label = st.selectbox("Choose a stock to look at:", list(symbol_options.keys()))
@@ -291,17 +388,13 @@ with tab_compare:
 st.divider()
 st.header("💬 Ask a question")
 
-api_key = os.environ.get("ANTHROPIC_API_KEY")
-if not api_key:
+if not client:
     st.warning(
-        "The chat assistant needs an Anthropic API key. Create a file named `.env` in this "
-        "folder with a line `ANTHROPIC_API_KEY=your-key-here` (see `.env.example`), then restart the app."
+        "The chat assistant needs an Anthropic API key -- see the note above Today's Briefing."
     )
 else:
-    import anthropic
     from anthropic import beta_tool
 
-    client = anthropic.Anthropic(api_key=api_key)
     watchlist_symbols = [w["symbol"] for w in st.session_state.watchlist]
 
     @beta_tool
@@ -368,9 +461,20 @@ else:
         """
         return json.dumps(tk.to_jsonable(tk.quarterly_report_summary(symbol)))
 
+    @beta_tool
+    def get_todays_price_move_and_news(symbol: str) -> str:
+        """Get today's price change plus the most recent news headlines for a stock --
+        use this to explain why a stock moved today.
+
+        Args:
+            symbol: Ticker symbol, e.g. AAPL, 0700.HK, 600519.SS.
+        """
+        return json.dumps(tk.to_jsonable(tk.daily_briefing_data(symbol)))
+
     TOOLS = [
         research_stock, find_ticker_symbol, get_buy_sell_signal, get_risk_scan,
         get_long_term_value_score, compare_multiple_stocks, get_quarterly_report,
+        get_todays_price_move_and_news,
     ]
 
     SYSTEM_PROMPT = (

@@ -116,6 +116,22 @@ def _row(df, *names):
 # 1) Research - company profile & recent news
 # ---------------------------------------------------------------------------
 
+def _fetch_news(ticker_obj, limit=5):
+    news_items = []
+    try:
+        for n in (ticker_obj.news or [])[:limit]:
+            c = n.get("content", n) if isinstance(n, dict) else {}
+            provider = c.get("provider")
+            news_items.append({
+                "title": c.get("title"),
+                "publisher": provider.get("displayName") if isinstance(provider, dict) else c.get("publisher"),
+                "date": c.get("pubDate") or c.get("providerPublishTime"),
+            })
+    except Exception:
+        pass
+    return news_items
+
+
 def research(symbol):
     t = get_ticker(symbol)
     info = t.info
@@ -132,19 +148,7 @@ def research(symbol):
         "website": info.get("website"),
         "business_summary": info.get("longBusinessSummary"),
     }
-    news_items = []
-    try:
-        for n in (t.news or [])[:5]:
-            c = n.get("content", n) if isinstance(n, dict) else {}
-            provider = c.get("provider")
-            news_items.append({
-                "title": c.get("title"),
-                "publisher": provider.get("displayName") if isinstance(provider, dict) else c.get("publisher"),
-                "date": c.get("pubDate") or c.get("providerPublishTime"),
-            })
-    except Exception:
-        pass
-    profile["recent_news"] = news_items
+    profile["recent_news"] = _fetch_news(t, limit=5)
     return profile
 
 
@@ -242,6 +246,43 @@ def technical_snapshot(symbol, period="1y"):
         "max_drawdown_pct": max_drawdown,
         "above_sma50": (last_price > sma50) if sma50 else None,
         "above_sma200": (last_price > sma200) if sma200 else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Daily move + news, for a "why did this move today" briefing
+# ---------------------------------------------------------------------------
+
+def daily_price_move(symbol):
+    """Today's (or most recent session's) price change vs. the prior close."""
+    t = get_ticker(symbol)
+    hist = t.history(period="5d", auto_adjust=True)
+    if hist.empty:
+        return None
+    # The most recent row can be a not-yet-populated placeholder (NaN OHLC) when
+    # that market's session hasn't closed/reported yet -- drop incomplete rows.
+    hist = hist.dropna(subset=["Close"])
+    if len(hist) < 2:
+        return None
+    last = hist.iloc[-1]
+    prev_close = hist.iloc[-2]["Close"]
+    last_date = hist.index[-1]
+    return {
+        "date": str(last_date.date()) if hasattr(last_date, "date") else str(last_date),
+        "close": float(last["Close"]),
+        "prev_close": float(prev_close),
+        "change_pct": _pct_change(float(last["Close"]), float(prev_close)),
+        "day_high": float(last["High"]),
+        "day_low": float(last["Low"]),
+    }
+
+
+def daily_briefing_data(symbol, news_limit=6):
+    """Everything needed to explain today's move: the price change + recent news."""
+    return {
+        "symbol": symbol,
+        "price_move": daily_price_move(symbol),
+        "news": _fetch_news(get_ticker(symbol), limit=news_limit),
     }
 
 
