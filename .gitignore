@@ -6,3 +6,4 @@ __pycache__/
 briefing_cache.json
 run_daily_briefing.log
 .claude/
+logs/
