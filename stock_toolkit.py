@@ -88,6 +88,20 @@ def _pct_change(new, old):
         return None
 
 
+def format_financial_value(v):
+    """Format a financial statement value for display.
+
+    Large figures (revenue, income) get comma-separated whole numbers;
+    small ones (EPS) keep 2 decimal places instead of rounding to a
+    near-meaningless integer.
+    """
+    if v is None:
+        return None
+    if abs(v) < 1000:
+        return f"{v:,.2f}"
+    return f"{v:,.0f}"
+
+
 def _row(df, *names):
     """First matching row (by label) from a yfinance statement DataFrame."""
     if df is None or df.empty:
@@ -516,6 +530,7 @@ def print_quarterly_report_summary(symbol):
     for l in r["lines"]:
         qoq = f"{l['qoq_change_pct']:+.1f}% QoQ" if l["qoq_change_pct"] is not None else "QoQ n/a"
         yoy = f"{l['yoy_change_pct']:+.1f}% YoY" if l["yoy_change_pct"] is not None else "YoY n/a"
-        print(f"  {l['line_item']:<18} {l['latest_quarter']:>18,.0f}   {qoq:>14}   {yoy:>14}")
+        value = format_financial_value(l["latest_quarter"]) or "n/a"
+        print(f"  {l['line_item']:<18} {value:>18}   {qoq:>14}   {yoy:>14}")
     if r["free_cash_flow_latest_quarter"] is not None:
-        print(f"  {'Free Cash Flow':<18} {r['free_cash_flow_latest_quarter']:>18,.0f}")
+        print(f"  {'Free Cash Flow':<18} {format_financial_value(r['free_cash_flow_latest_quarter']):>18}")

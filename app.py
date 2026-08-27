@@ -192,7 +192,7 @@ with tab_overview:
             f"{stats['upside_to_target_pct']:+.0f}% from here over the next year."
         )
     if stats["dividend_yield"]:
-        bullets.append(f"It pays a dividend yield of about {stats['dividend_yield']*100:.1f}%.")
+        bullets.append(f"It pays a dividend yield of about {stats['dividend_yield']:.2f}%.")
     if risk["risk_flags"]:
         bullets.append("Risk checks found some things worth knowing about (see the 'Why?' tab).")
     else:
@@ -242,18 +242,47 @@ with tab_report:
         for l in quarterly["lines"]:
             rows.append({
                 "Line item": l["line_item"],
-                "Latest quarter": f"{l['latest_quarter']:,.0f}" if l["latest_quarter"] is not None else "n/a",
+                "Latest quarter": tk.format_financial_value(l["latest_quarter"]) or "n/a",
                 "vs. prior quarter": f"{l['qoq_change_pct']:+.1f}%" if l["qoq_change_pct"] is not None else "n/a",
                 "vs. a year ago": f"{l['yoy_change_pct']:+.1f}%" if l["yoy_change_pct"] is not None else "n/a",
             })
         render_table(rows, columns=["Line item", "Latest quarter", "vs. prior quarter", "vs. a year ago"])
 
 with tab_compare:
+    import pandas as pd
+
+    def _val(row, col):
+        v = row.get(col)
+        return None if pd.isna(v) else v
+
     st.write("Comparing everything in your watchlist:")
     all_symbols = [w["symbol"] for w in st.session_state.watchlist]
     compare_df = tk.compare_stocks(all_symbols)
-    compare_rows = compare_df.reset_index().to_dict("records")
-    render_table(compare_rows, columns=["symbol"] + list(compare_df.columns))
+
+    friendly_rows = []
+    for sym, row in compare_df.iterrows():
+        price = _val(row, "price")
+        pe = _val(row, "trailing_pe")
+        margin = _val(row, "profit_margin")
+        rev_growth = _val(row, "revenue_growth")
+        div_yield = _val(row, "dividend_yield")
+        beta = _val(row, "beta")
+        recommendation = _val(row, "analyst_recommendation")
+        friendly_rows.append({
+            "Stock": f"{row['name']} ({sym})",
+            "Price": f"{price:,.2f}" if price is not None else "n/a",
+            "P/E ratio": f"{pe:.1f}" if pe is not None else "n/a",
+            "Profit margin": f"{margin*100:.1f}%" if margin is not None else "n/a",
+            "Revenue growth": f"{rev_growth*100:+.1f}%" if rev_growth is not None else "n/a",
+            "Dividend yield": f"{div_yield:.2f}%" if div_yield is not None else "n/a",
+            "Risk (beta)": f"{beta:.2f}" if beta is not None else "n/a",
+            "Analyst view": recommendation.replace("_", " ").title() if recommendation else "n/a",
+        })
+    render_table(friendly_rows)
+
+    with st.expander("Show full data (all metrics)"):
+        compare_rows = compare_df.reset_index().to_dict("records")
+        render_table(compare_rows, columns=["symbol"] + list(compare_df.columns))
 
 
 # ---------------------------------------------------------------------------
