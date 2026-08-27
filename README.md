@@ -64,7 +64,7 @@ it to your watchlist -- no need to know ticker symbols.
 **Notebook (for anyone comfortable with code):**
 
 ```bash
-jupyter notebook stock_managment.ipynb
+jupyter notebook notebooks/stock_managment.ipynb
 ```
 
 ## Ticker format reference
@@ -83,6 +83,6 @@ only matter if you're using `stock_toolkit.py` directly.
 |---|---|
 | `stock_toolkit.py` | Core data + analysis functions, reused by both the app and the notebook |
 | `app.py` | Streamlit dashboard + chat |
-| `stock_managment.ipynb` | Notebook walkthrough of all 8 capabilities |
+| `notebooks/stock_managment.ipynb` | Notebook walkthrough of all 8 capabilities |
 | `requirements.txt` | Python dependencies |
 | `.env.example` | Template for your local `.env` (never commit the real `.env`) |
