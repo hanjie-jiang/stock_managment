@@ -41,5 +41,5 @@ multipage rewrite) -- worth confirming the shape before doing it, not after.
 ## Running it
 
 - Dashboard: `streamlit run app.py`
-- Daily briefing background job: `python scripts/run_daily_briefing.py`
+- Daily briefing background job: `python tools/run_daily_briefing.py`
 - Notebook: `jupyter notebook notebooks/stock_managment.ipynb`

@@ -5,7 +5,7 @@ this matters (2 local-LLM calls per stock).
 
 Run once a day (see README.md for Windows Task Scheduler setup):
 
-    python scripts/run_daily_briefing.py
+    python tools/run_daily_briefing.py
 
 Needs Ollama running locally, same as the live briefing.
 """
@@ -15,13 +15,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
-# Allow importing stock_toolkit/storage from the project root when this
-# script runs from inside scripts/ (e.g. as a Task Scheduler target).
+# Allow importing stock_toolkit/data from the project root when this
+# script runs from inside tools/ (e.g. as a Task Scheduler target).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import stock_toolkit as tk
-from storage import briefing_store as bs
-from storage import watchlist_store as ws
+from data import briefing_store as bs
+from data import watchlist_store as ws
 
 MAX_WORKERS = 4
 
@@ -66,8 +66,8 @@ def main():
     bs.save_cache(cache)
     bs.archive_briefings(today_str, watchlist, results)
 
-    print(f"\nSaved {len(results)}/{len(watchlist)} briefings to storage/briefing_cache.json")
-    print("Archived today's briefings to storage/briefing_history.jsonl")
+    print(f"\nSaved {len(results)}/{len(watchlist)} briefings to data/briefing_cache.json")
+    print("Archived today's briefings to data/briefing_history.jsonl")
     if failures:
         print(f"Failed (kept previous cached value, if any): {', '.join(failures)}")
 

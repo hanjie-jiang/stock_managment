@@ -6,6 +6,8 @@ __pycache__/
 briefing_cache.json
 run_daily_briefing.log
 .claude/
-logs/
-storage/watchlist.json
+.vscode/
+dev-log/
+research/
+data/watchlist.json
 .pytest_cache/

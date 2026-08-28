@@ -10,7 +10,7 @@ from collections import defaultdict
 import streamlit as st
 
 import stock_toolkit as tk
-from storage import watchlist_store as wls
+from data import watchlist_store as wls
 
 PAGE_STYLE = """
 <style>

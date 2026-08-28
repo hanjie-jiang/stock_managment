@@ -55,7 +55,7 @@ morning at 7am, so it's usually ready before you open the app.
 
 The dashboard starts with a small 5-stock demo watchlist. To get the same
 watchlist as everyone else in the family, ask whoever set this up to send
-you their `storage/watchlist.json` file to drop into your `storage/`
+you their `data/watchlist.json` file to drop into your `data/`
 folder -- or just add the same stocks yourself using the search box in the
 sidebar.
 
@@ -66,7 +66,7 @@ Requires Python 3.11+.
 **Windows (PowerShell), one step:**
 
 ```powershell
-.\setup.ps1
+.\tools\setup.ps1
 ```
 
 **Manual setup (any OS):**
@@ -96,16 +96,16 @@ calls per stock, which adds up. Instead of generating it live on every page
 load, pre-generate it once a day as a background job:
 
 ```bash
-python scripts/run_daily_briefing.py
+python tools/run_daily_briefing.py
 ```
 
 The dashboard then reads instantly from the cache it writes
-(`storage/briefing_cache.json`). Anything missing/stale can still be
+(`data/briefing_cache.json`). Anything missing/stale can still be
 generated on-demand from a button in the app. To run this automatically
 every morning on Windows, register a scheduled task (once):
 
 ```powershell
-schtasks /create /tn "StockTrackerBriefing" /tr "'C:\path\to\.venv\Scripts\python.exe' 'C:\path\to\scripts\run_daily_briefing.py'" /sc daily /st 07:00
+schtasks /create /tn "StockTrackerBriefing" /tr "'C:\path\to\.venv\Scripts\python.exe' 'C:\path\to\tools\run_daily_briefing.py'" /sc daily /st 07:00
 ```
 
 (adjust the paths to match your setup; remove with `schtasks /delete /tn "StockTrackerBriefing"`)
@@ -139,7 +139,7 @@ only matter if you're using `stock_toolkit` directly.
 
 ## Watchlists of any size
 
-The watchlist persists to `storage/watchlist.json` (survives restarts) and is
+The watchlist persists to `data/watchlist.json` (survives restarts) and is
 grouped by industry everywhere -- sidebar, Compare tab, Today's Briefing --
 so it stays usable whether you're tracking 5 stocks or 50+. Sector/industry
 is looked up once per stock (when it's added) and cached in that file, not
@@ -149,10 +149,9 @@ refetched on every page load.
 
 ```
 CLAUDE.md                 Working conventions for Claude Code on this repo
-Install.bat                One-time setup for a family member's own PC (no coding)
-Launch-Dashboard.vbs      Opens the dashboard with no visible window -- what the
-                           Desktop shortcut runs
-Launch-Dashboard.bat       Same, but with a visible terminal window (troubleshooting)
+Install.bat                One-time setup for a family member's own PC (no coding) --
+                           the only launcher kept at root, so it's visible right after
+                           unzipping the repo
 app.py                    Streamlit entry point (streamlit run app.py) -- shared chrome
                            (page config, CSS, sidebar) plus st.navigation dispatch into
                            pages/
@@ -173,15 +172,20 @@ stock_toolkit/            Core data + analysis package, reused by the app, the
                              risk flags, long-term value checklist, comparison
   funds.py                   ETF/mutual fund handling (holdings-based move explanation)
   briefing.py                 Today's Briefing: the local-LLM "why did this move" pipeline
-storage/                  Local JSON persistence
+data/                     Local JSON persistence
   watchlist_store.py         Persists the watchlist to watchlist.json (committed)
   briefing_store.py           Reads/writes the Today's Briefing cache (gitignored)
   briefing_history.py         Appends each day's briefing to a permanent log (committed)
-scripts/
+tools/                    Everything run from a terminal/shortcut rather than through
+                           the Streamlit app itself
   run_daily_briefing.py      Background job: pre-generates Today's Briefing for the
                              whole watchlist (see "Optional: Today's Briefing" above)
   install_dashboard.ps1      Installer logic behind Install.bat
-  launch_dashboard.ps1       Launch logic behind Launch-Dashboard.vbs
+  setup.ps1                   Dev-only environment setup (venv + dependencies)
+  launch_dashboard.ps1        Launch logic behind Launch-Dashboard.vbs
+  Launch-Dashboard.vbs        Opens the dashboard with no visible window -- what the
+                             Desktop shortcut runs
+  Launch-Dashboard.bat        Same, but with a visible terminal window (troubleshooting)
   generate_icon.py           Regenerates assets/dashboard.ico if it ever needs to change
 notebooks/
   stock_managment.ipynb      Notebook walkthrough of all capabilities
@@ -202,11 +206,11 @@ without needing to know which submodule a given function actually lives in.
 
 ## Today's Briefing history
 
-`storage/briefing_cache.json` only ever holds *today's* briefings -- it's
+`data/briefing_cache.json` only ever holds *today's* briefings -- it's
 overwritten daily and gitignored because it's trivially regenerable.
 Every briefing that gets generated (by the background job or the app's
 "generate missing" button) is also appended to
-`storage/briefing_history.jsonl`, a permanent, append-only log (one JSON
+`data/briefing_history.jsonl`, a permanent, append-only log (one JSON
 line per day per stock: date, price move, and the explanation/headlines or
 fund holdings behind it). It's **not** gitignored, so committing the repo
 backs it up -- unlike the cache, a day's headlines can't be refetched once

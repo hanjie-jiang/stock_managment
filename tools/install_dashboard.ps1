@@ -43,7 +43,7 @@ if (Test-Command "python") {
 # --- Step 2: virtual environment + dependencies (reuse setup.ps1) ---
 Write-Host "[2/5] Setting up the app's Python environment..."
 try {
-    & "$RepoRoot\setup.ps1"
+    & "$RepoRoot\tools\setup.ps1"
 } catch {
     Write-Host "Failed to set up the Python environment: $_" -ForegroundColor Red
     exit 1
@@ -81,7 +81,7 @@ $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $DesktopPath "Family Stock Dashboard.lnk"
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $RepoRoot "Launch-Dashboard.vbs"
+$Shortcut.TargetPath = Join-Path $RepoRoot "tools\Launch-Dashboard.vbs"
 $Shortcut.WorkingDirectory = $RepoRoot
 $Shortcut.Description = "Open the Family Stock Dashboard"
 $Shortcut.IconLocation = Join-Path $RepoRoot "assets\dashboard.ico"
@@ -91,7 +91,7 @@ Write-Host "Shortcut created: $ShortcutPath" -ForegroundColor Green
 # --- Step 5: daily briefing job (7am) ---
 Write-Host "[5/5] Scheduling the daily briefing to prepare itself each morning..."
 $PythonExe = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-$BriefingScript = Join-Path $RepoRoot "scripts\run_daily_briefing.py"
+$BriefingScript = Join-Path $RepoRoot "tools\run_daily_briefing.py"
 schtasks /create /tn "StockTrackerBriefing" /tr "'$PythonExe' '$BriefingScript'" /sc daily /st 07:00 /f | Out-Null
 
 Write-Host ""
