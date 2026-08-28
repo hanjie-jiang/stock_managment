@@ -9,10 +9,12 @@ README.md for setup. Everything else works with no setup at all.
 
 import streamlit as st
 
+from webapp import auto_shutdown
 from webapp import ui_common as ui
 from webapp.i18n import t
 
 st.set_page_config(page_title="Family Stock Tracker", page_icon="📈", layout="wide")
+auto_shutdown.init()
 ui.apply_style()
 ui.init_language_state()
 ui.init_watchlist_state()
