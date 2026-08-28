@@ -12,9 +12,9 @@ from datetime import date
 
 import streamlit as st
 
-import briefing_store as bs
 import stock_toolkit as tk
-import watchlist_store as wls
+from storage import briefing_store as bs
+from storage import watchlist_store as wls
 
 st.set_page_config(page_title="Family Stock Tracker", page_icon="📈", layout="wide")
 
@@ -161,7 +161,7 @@ if not st.session_state.watchlist:
 
 # ---------------------------------------------------------------------------
 # Today's Briefing -- why each watchlist stock moved, in plain English.
-# Reads from a cache pre-computed by run_daily_briefing.py (see README) so
+# Reads from a cache pre-computed by scripts/run_daily_briefing.py (see README) so
 # opening the dashboard is instant regardless of watchlist size -- at 50+
 # stocks, generating live on every page load (2 local-LLM calls each) would
 # take many minutes. Anything missing/stale can still be generated on demand.
@@ -232,7 +232,7 @@ else:
     if missing:
         st.caption(
             f"{len(ready)}/{len(st.session_state.watchlist)} briefings ready for today. "
-            f"{len(missing)} missing (run `python run_daily_briefing.py` to pre-generate all "
+            f"{len(missing)} missing (run `python scripts/run_daily_briefing.py` to pre-generate all "
             "of them in the background, or generate just the missing ones now)."
         )
         if st.button(f"Generate the {len(missing)} missing briefings now"):
@@ -240,17 +240,21 @@ else:
 
             progress = st.progress(0.0, text="Starting...")
             done = 0
+            fresh_results = {}
             with ThreadPoolExecutor(max_workers=4) as ex:
                 futures = {ex.submit(tk.explain_daily_move, w["symbol"], w["name"]): w for w in missing}
                 for fut in as_completed(futures):
                     w = futures[fut]
                     done += 1
                     try:
-                        bs.set_briefing(w["symbol"], today_str, fut.result())
+                        result = fut.result()
+                        bs.set_briefing(w["symbol"], today_str, result)
+                        fresh_results[w["symbol"]] = result
                     except Exception:
                         pass
                     progress.progress(done / len(missing), text=f"{done}/{len(missing)}: {w['symbol']}")
             progress.empty()
+            bs.archive_briefings(today_str, st.session_state.watchlist, fresh_results)
             st.rerun()
 
     for industry, items in sorted(group_by_industry(st.session_state.watchlist).items()):
