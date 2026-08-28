@@ -9,23 +9,25 @@ README.md for setup. Everything else works with no setup at all.
 
 import streamlit as st
 
-import ui_common as ui
+from webapp import ui_common as ui
+from webapp.i18n import t
 
 st.set_page_config(page_title="Family Stock Tracker", page_icon="📈", layout="wide")
 ui.apply_style()
+ui.init_language_state()
 ui.init_watchlist_state()
 
-st.title("📈 Family Stock Tracker")
+st.title(f"📈 {t('app_title')}")
 
 with st.sidebar:
     ui.render_sidebar()
 
 if not st.session_state.watchlist:
-    st.info("Add a stock from the left panel to get started.")
+    st.info(t("add_stock_prompt"))
     st.stop()
 
 pg = st.navigation([
-    st.Page("pages/dashboard.py", title="Stock Dashboard", icon="📊", default=True),
-    st.Page("pages/briefing.py", title="Today's Briefing", icon="📰"),
+    st.Page("pages/dashboard.py", title=t("nav_dashboard"), icon="📊", default=True),
+    st.Page("pages/briefing.py", title=t("nav_briefing"), icon="📰"),
 ])
 pg.run()

@@ -10,4 +10,5 @@ run_daily_briefing.log
 dev-log/
 research/
 data/watchlist.json
+data/settings.json
 .pytest_cache/

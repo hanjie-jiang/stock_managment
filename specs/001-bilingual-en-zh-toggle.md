@@ -52,7 +52,10 @@ alongside the existing `ui.init_watchlist_state()`.
 
 **Static UI text.** New `i18n.py` (plain module next to `ui_common.py`, not inside
 `stock_toolkit` -- this is presentation, same reasoning `ui_common.py` already gives for
-staying outside the toolkit package). Holds a flat dict of
+staying outside the toolkit package. Both, plus `auto_shutdown.py`, moved into a small
+`webapp/` package shortly after this feature shipped, once the repo root had accumulated
+enough loose presentation-layer modules to warrant it -- same package, same reasoning,
+just grouped together instead of loose at root). Holds a flat dict of
 `{"en": {key: text}, "zh": {key: text}}` and a lookup helper, e.g. `t(key, **kwargs)`
 reading `st.session_state.lang` and doing `.format(**kwargs)` on the matched string.
 Every hardcoded string currently in `app.py`, `ui_common.py`, `pages/dashboard.py`, and
@@ -84,52 +87,52 @@ design fork, and the one most worth confirming before writing code:
   confirmation before implementation, since it changes the return shape of three public
   `stock_toolkit` functions.
 
-**Today's Briefing (`stock_toolkit/briefing.py`) -- source-of-truth language is per-stock,
-by market, not per-viewer.** Revised design, replacing the earlier
-always-English-then-translate draft: which language the explanation is *generated* in
-depends on which market the stock trades on, not on who's viewing it.
+**Today's Briefing (`stock_toolkit/briefing.py`) -- English is always the generation
+language; Chinese is a translated derivative. IMPLEMENTED, superseding both this
+section's original per-market-native-generation draft and the always-English-then-
+translate draft that preceded it.** The per-market design below was the plan going into
+implementation; live testing against `qwen2.5:7b` and `qwen2.5:14b` before writing the
+final code overturned it.
 
-- **US-market stocks** (no `.HK`/`.SS`/`.SZ` suffix -- this includes US-listed Chinese
-  ADRs like BABA/JD/PDD, since the split is by listing market, not company nationality;
-  confirm this reading matches intent, see Open Questions): generated in English by the
-  existing `llama3.1:8b`, exactly as today. English is the source of truth.
-- **HK/China-market stocks** (`.HK`, `.SS`, `.SZ` suffix): generated in Chinese by Qwen
-  instead -- both `score_news_relevance`'s per-headline relevance judgment/reason and
-  `explain_daily_move`'s final one-sentence explanation are produced directly in
-  Chinese, reasoning over whatever language the underlying yfinance headlines happen to
-  be in. Chinese is the source of truth for these stocks. Rationale: the news driving a
-  Moutai or Tencent move is often native to a Chinese-reading model's strengths, and
-  generating natively in Chinese avoids a round-trip (headlines -> English reasoning ->
-  Chinese translation) that risks losing nuance a direct Chinese read wouldn't.
+Both sub-tasks -- `score_news_relevance`'s per-headline relevance judgment and
+`explain_daily_move`'s one-sentence synthesis -- were tested asking Qwen to generate
+Chinese directly from raw facts (headlines, price move). Both reliably produced garbled
+or hallucinated output (English bleeding into a Chinese-only prompt, a mangled numbered-
+line format, and in one case inventing that `0700.HK` was Meituan instead of Tencent),
+regardless of model size, and Ollama's `format: "json"` structured-output constraint only
+fixed the first sub-task's formatting, not the second's factual grounding. Pure
+translation of an already-written English sentence, by contrast, tested reliably correct
+across several varied sentences on `qwen2.5:7b`. So: **`local_llm_complete` (English,
+`llama3.1:8b`) generates for every stock regardless of market, unchanged from before this
+feature** -- `translate_to_zh` (new, `qwen2.5:7b`, JSON-mode) translates the result to
+Chinese afterward, applied to both `explanation` and each `considered[i]["reason"]`
+(including skipped headlines, not just used ones, so the audit trail doesn't read as
+half-translated). `translation_available()` checks the model is actually pulled before
+attempting translation, falling back to English-only display (with a small notice) on an
+install that hasn't pulled it -- same resilience pattern as `ollama_available()`.
 
-A small helper (e.g. `_source_lang_for_symbol(symbol)`) in `briefing.py` makes this
-call from the suffix. Whichever language wasn't the source gets a translation pass via
-Qwen (en->zh for US stocks, zh->en for HK/China stocks) -- applied to both the top-line
-`explanation` and each `considered[i]["reason"]`, since a half-translated audit trail
-(explanation in one language, per-headline reasons still in the other) would look
-broken. `funds.py`'s `explain_fund_move` needs the same per-market routing for
-consistency, as part of implementation.
+`funds.py`'s `explain_fund_move` needed the equivalent of "produce both languages," but
+not via Qwen -- it's a deterministic (no-LLM) template, so both language versions are
+built directly as plain string formatting, which is simpler and more exact than routing
+already-correct text through a translation call.
 
-**Storage.** `data/briefing_cache.json` entries gain a `lang` field recording the
-source language plus a translated counterpart, e.g.
-`{"lang": "zh", "explanation": "<Chinese, source>", "explanation_translated":
-"<English>", "considered": [{"headline": ..., "relevant": ..., "reason": "<Chinese>",
-"reason_translated": "<English>"}, ...]}`. `pages/briefing.py` shows `explanation`/
-`reason` when `st.session_state.lang` matches the entry's `lang`, otherwise the
-`_translated` counterpart. `briefing_history.jsonl` (the committed permanent archive)
-now archives the *source* text plus its `lang` tag per entry -- genuinely mixed-language
-across the file (US-stock entries in English, HK/China-stock entries in Chinese), which
-is a more honest "what was actually said" record than forcing a single language. The
-deferred forward-return-calibration backlog item will need to read `lang` when it's
-eventually built, but it isn't built yet, so no immediate impact.
+**Storage.** Simpler than the per-market draft's `lang`-tagged design, since there's now
+only one source language: each briefing result carries `explanation` (English, always)
+and `explanation_zh` (Chinese, or `None` if translation wasn't available at generation
+time); each `considered[i]` carries `reason`/`reason_zh` the same way. `pages/briefing.py`
+shows the `_zh` field when the viewer's toggle is Chinese, falling back to the English
+field if the translation is `None`. `briefing_history.jsonl` (the committed permanent
+archive) archives both fields per entry -- English is always present; Chinese is present
+whenever the translation model was available at generation time.
 
-**Dependency footprint, symmetric now.** Because model choice is tied to the stock's
-market rather than the viewer's display language, *both* installs need *both* models
-pulled as soon as the watchlist spans both markets -- which the default watchlist
-already does (AAPL/MSFT are US; `600519.SS`/`0700.HK` are China/HK). This isn't "the
-dad's install needs an extra model" as the earlier draft framed it -- it's "anyone using
-this app across US and HK/China stocks needs both models," regardless of which language
-they read in.
+**Dependency footprint, smaller than either earlier draft assumed.** `llama3.1:8b` is
+needed by every install, as before this feature (nothing changed about English
+generation). `qwen2.5:7b` is needed only by an install that actually displays Chinese --
+an all-English install never calls `translate_to_zh` and never needs to pull it. This is
+narrower than both the per-market draft (which assumed every install needing both US and
+HK/China stocks needs both models) and the original always-English-then-translate draft's
+assumption -- the dependency now follows the *viewer's* language choice, not the
+watchlist's market mix.
 
 ## Non-technical-user impact
 
@@ -137,63 +140,59 @@ This is the whole point of the feature for the dad's install: he opens the app a
 everything -- labels, buttons, the "Why this signal?" reasoning, risk flags, and the
 daily briefing -- is in Chinese by default, no setup step and no toggle needed unless he
 wants to peek at the English version. The toggle itself is a new UI element he'll see
-(two buttons/a radio in the sidebar) -- keep it visually simple and at the very top of
-the sidebar, consistent with the large-print/high-contrast style `ui_common.py` already
-applies for older users. No new failure modes expected, other than: if Qwen's
-Chinese generation or its translation quality is poor (see Open Questions), the briefing
-text could read as awkward machine translation -- worth a real check with real headlines
-before calling this done for the briefing piece specifically. Also worth noting: *both*
-installs now need two local Ollama models pulled instead of one, since model choice
-follows the stock's market rather than the viewer's language (see Design) -- a one-line
-addition to the README's Ollama setup step, not a new concept for either of them to
-understand (neither ever sees a model name).
+(a radio at the very top of the sidebar) -- kept visually simple, consistent with the
+large-print/high-contrast style `ui_common.py` already applies for older users. If his
+install hasn't pulled `qwen2.5:7b`, Today's Briefing falls back to English with a small
+caption explaining why (see README) -- everything else on the dashboard still renders in
+Chinese regardless, since only the Briefing's translation depends on that model.
 
 ## Acceptance criteria
 
 - A language toggle is visible at the top of the sidebar; clicking it switches all
   static text (labels, buttons, tab names, headers) across `app.py`, both `pages/`
-  scripts, and `ui_common.py` immediately, no restart.
+  scripts, and `ui_common.py` immediately, no restart. IMPLEMENTED.
 - The choice persists: closing and relaunching the app on the same install reopens in
-  the last-selected language.
+  the last-selected language. IMPLEMENTED (`data/settings_store.py`).
 - `data/settings.json` is created on first run (like `watchlist.json`), gitignored,
-  and defaults to `"en"` if absent.
-- The "Why?" tab's bullish/bearish points, the risk flags, and the long-term value
-  checklist all render in the selected language with correct numbers substituted in.
-- Today's Briefing for a US-market stock is generated in English by `llama3.1:8b`
-  (unchanged from today); for an HK/China-market stock (`.HK`/`.SS`/`.SZ`), it's
-  generated in Chinese by Qwen. Both the top-line explanation and each per-headline
-  `considered[i]["reason"]` follow this split.
-- Whichever language wasn't the source is filled in via a Qwen translation pass and
-  cached alongside the source text; a viewer's toggle selects source-vs-translated
-  per entry based on the entry's `lang`, never showing a half-translated mix within one
-  briefing entry.
-- `briefing_history.jsonl` archives the source-language text plus a `lang` tag per
-  entry -- mixed-language across the file by design, matching each entry's actual
-  source market.
+  and defaults to `"en"` if absent. IMPLEMENTED.
+- The "Why?" tab's bullish/bearish points, risk flags, the long-term value checklist,
+  the buy/sell lean, the risk level, and the value-score verdict all render in the
+  selected language with correct numbers substituted in. IMPLEMENTED (structured
+  `{code, params, text}` entries in `signals.py`, rendered via `i18n.reason_text`/
+  `i18n.code_text`).
+- Today's Briefing always generates in English (`llama3.1:8b`, every stock, every
+  market -- unchanged from before this feature) and translates to Chinese
+  (`qwen2.5:7b`) for both the top-line explanation and every per-headline
+  `considered[i]["reason"]` (used and skipped alike). IMPLEMENTED -- supersedes the
+  market-based native-generation criterion this originally stated; see Design.
+- A viewer's toggle shows the `_zh` field when set to Chinese, falling back to the
+  English field when translation wasn't available at generation time (model not
+  pulled, or the call failed) -- never a blank. IMPLEMENTED (`translation_available()`
+  guard in `briefing.py`; fallback logic in `pages/briefing.py`).
+- `briefing_history.jsonl` archives both `explanation`/`explanation_zh` per entry.
+  IMPLEMENTED.
 - `print_buy_sell_signal`, `print_risk_scan`, `print_long_term_value_score`, and the
   notebook's existing usage of `stock_toolkit` continue to work unchanged (English,
   same as today) -- confirms the structured-code approach didn't break the toolkit's
-  non-dashboard consumers.
+  non-dashboard consumers. VERIFIED (offline fixture tests, `tests/test_market_data.py`
+  plus a manual run against the AAPL fixture).
 - Switching language does not lose the current watchlist, selected stock, or chart time
-  range.
+  range. IMPLEMENTED (language lives in its own `st.session_state.lang` key).
 
 ## Open questions
 
-- **Confirm the design fork above** (structured reason codes vs. a `lang` parameter
-  threaded through `stock_toolkit`) before implementation starts.
-- **Pick and verify a real Qwen Ollama tag live** before locking it into the README/
-  setup step -- `qwen2.5:7b` is a reasonable starting guess (known for solid Chinese
-  output) but needs `ollama pull` and real checks before calling it settled: (a) does it
-  produce natural, plain Chinese for both direct generation and translation, keeping
-  tickers/numbers intact; (b) does it reliably follow the same structured
-  `<number>: YES - <reason>` line format `score_news_relevance`'s parser expects, when
-  instructed to answer in Chinese -- this is a formatting-following task layered on top
-  of a language task, worth confirming it doesn't break the parser. Since both installs
-  now need Qwen regardless of display language (see Design), also worth a live timing
-  check on whether running `llama3.1:8b` and `qwen2.5:7b` alongside each other is
-  reasonable on the dad's hardware -- if not, `qwen2.5:3b` is the fallback.
-- **Confirm the market-classification rule.** `.HK`/`.SS`/`.SZ` suffix = Chinese source
-  of truth; everything else (including US-listed Chinese ADRs like BABA/JD/PDD) = English
-  source of truth, per "US stock market" vs. "HK or china stock market" in the request.
-  Flagging since it's a real classification call, not because it seems likely to be
-  wrong.
+All three resolved during implementation:
+
+- **Design fork (structured reason codes vs. a `lang` parameter):** resolved --
+  structured reason codes, as recommended above.
+- **Qwen tag choice:** resolved, with a result that changed the Design section above.
+  `qwen2.5:7b` and `qwen2.5:14b` were both live-tested generating Chinese directly from
+  raw facts (the per-market draft's plan) and both reliably produced garbled or
+  hallucinated output; `qwen2.5:7b` translating an already-written English sentence
+  tested reliable instead. `qwen2.5:7b` (not `14b`) is what's wired in, since the
+  translation task -- the one that actually works -- didn't need the larger model's
+  extra capacity in testing.
+- **Market-classification rule (`.HK`/`.SS`/`.SZ` = Chinese source of truth):**
+  moot -- superseded by the always-English-generation finding above. No per-market
+  classification exists in the shipped code; every stock generates in English and
+  translates the same way regardless of listing market.

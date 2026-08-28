@@ -27,11 +27,14 @@ submodule actually owns a given function.
 from .briefing import (
     OLLAMA_MODEL,
     OLLAMA_URL,
+    TRANSLATION_MODEL,
     daily_briefing_data,
     explain_daily_move,
     local_llm_complete,
     ollama_available,
     score_news_relevance,
+    translate_to_zh,
+    translation_available,
 )
 from .funds import explain_fund_move, get_fund_top_holdings, is_fund
 from .market_data import (
@@ -64,6 +67,7 @@ from .signals import (
 __all__ = [
     "OLLAMA_MODEL",
     "OLLAMA_URL",
+    "TRANSLATION_MODEL",
     "buy_sell_signal",
     "compare_stocks",
     "daily_briefing_data",
@@ -94,4 +98,6 @@ __all__ = [
     "search_symbol",
     "technical_snapshot",
     "to_jsonable",
+    "translate_to_zh",
+    "translation_available",
 ]

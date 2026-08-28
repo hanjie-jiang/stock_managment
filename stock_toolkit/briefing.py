@@ -10,8 +10,26 @@ news-relevance screening is the wrong tool for a diversified fund, which
 doesn't have a single-company catalyst to find.
 
 Runs on a local Ollama model -- free, private, no API key.
+
+**Bilingual design (see specs/001-bilingual-en-zh-toggle.md).** The original
+spec proposed generating Chinese natively for HK/China-market stocks (source
+language following the stock's listing market). Live testing before
+implementation overturned that: asking qwen2.5:7b/14b to generate Chinese
+from raw facts (either the per-headline relevance judgment or the final
+one-sentence synthesis) reliably produced garbled or hallucinated output,
+regardless of model size -- even with Ollama's `format: "json"` structured-
+output constraint, which otherwise fixed the relevance stage's formatting.
+Pure translation of an already-written English sentence, by contrast, tested
+reliably correct on the same model. So: **English is always the generation
+language, for every stock regardless of market** (`local_llm_complete`,
+unchanged) -- Chinese is produced by translating that output afterward
+(`translate_to_zh`). This also shrinks the dependency footprint from the
+original spec's assumption: an all-English install never calls the
+translation model at all, so only an install that actually displays Chinese
+needs `qwen2.5:7b` pulled.
 """
 
+import json
 import re
 
 import requests
@@ -21,6 +39,7 @@ from .market_data import _fetch_news, daily_price_move, get_ticker
 
 OLLAMA_URL = "http://localhost:11434"
 OLLAMA_MODEL = "llama3.1:8b"
+TRANSLATION_MODEL = "qwen2.5:7b"
 
 
 def ollama_available():
@@ -31,6 +50,24 @@ def ollama_available():
         return False
 
 
+def _model_pulled(model):
+    """Whether `model` has actually been `ollama pull`ed -- ollama_available()
+    only checks the server is up, not which models it has. Used to skip
+    Chinese translation gracefully (falling back to English-only) on an
+    install that hasn't pulled the translation model, same "everything else
+    works without it" resilience as ollama_available() elsewhere."""
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
+        r.raise_for_status()
+        return any(m.get("name") == model for m in r.json().get("models", []))
+    except requests.exceptions.RequestException:
+        return False
+
+
+def translation_available():
+    return ollama_available() and _model_pulled(TRANSLATION_MODEL)
+
+
 def local_llm_complete(prompt, system=None, model=OLLAMA_MODEL, timeout=30):
     """Send a prompt to a locally-running Ollama model and return its text response."""
     payload = {"model": model, "prompt": prompt, "stream": False}
@@ -39,6 +76,39 @@ def local_llm_complete(prompt, system=None, model=OLLAMA_MODEL, timeout=30):
     response = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=timeout)
     response.raise_for_status()
     return response.json().get("response", "").strip()
+
+
+def translate_to_zh(text, timeout=30):
+    """Translate an already-written English sentence to Simplified Chinese.
+
+    Deliberately narrow (translate this exact sentence, nothing else) rather
+    than "explain this in Chinese" -- the narrower task is what tested
+    reliable (see module docstring). Uses Ollama's JSON structured-output
+    mode so the response is always parseable; returns None (not the English
+    text) on any failure, so callers can tell "no translation" apart from
+    "translation happens to equal the English".
+    """
+    if not text:
+        return None
+    payload = {
+        "model": TRANSLATION_MODEL,
+        "format": "json",
+        "system": (
+            "你是专业的金融文本翻译，只负责把给定的英文句子准确翻译成简体中文，"
+            "不要添加、删减或评论任何内容。"
+        ),
+        "prompt": (
+            "请将下面这句英文翻译成简体中文，保留其中的公司名、股票代码和百分比数字不变，"
+            f'只返回JSON: {{"translation": "..."}}\n\n英文原文: {text}'
+        ),
+        "stream": False,
+    }
+    try:
+        response = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=timeout)
+        response.raise_for_status()
+        return json.loads(response.json().get("response", "")).get("translation") or None
+    except (requests.exceptions.RequestException, ValueError, KeyError):
+        return None
 
 
 def daily_briefing_data(symbol, news_limit=6):
@@ -115,21 +185,28 @@ def score_news_relevance(symbol, name, change_pct, news_items):
 def explain_daily_move(symbol, name, news_limit=6):
     """Two-stage, auditable explanation of today's price move (see module docstring).
 
-    Returns {"change_pct": float|None, "explanation": str|None, "considered": [...],
-    "holdings": [...]} -- "considered"/"holdings" are the audit trail (whichever
-    applies), useful for showing your work rather than asking anyone to just
-    trust a single free-form answer.
+    Returns {"change_pct": float|None, "explanation": str|None,
+    "explanation_zh": str|None, "considered": [...], "holdings": [...]} --
+    "considered"/"holdings" are the audit trail (whichever applies), useful
+    for showing your work rather than asking anyone to just trust a single
+    free-form answer. "explanation" (and each considered[i]["reason"]) is
+    always English, the sole generation language (see module docstring);
+    "explanation_zh" (and considered[i]["reason_zh"]) is a translated
+    counterpart, present only when the translation model is pulled and
+    reachable -- None otherwise, so callers fall back to English rather than
+    showing a missing translation as blank.
     """
     data = daily_briefing_data(symbol, news_limit=news_limit)
     move = data["price_move"]
     if move is None or move.get("change_pct") is None:
-        return {"change_pct": None, "explanation": None, "considered": [], "holdings": []}
+        return {"change_pct": None, "explanation": None, "explanation_zh": None, "considered": [], "holdings": []}
 
     if is_fund(symbol):
         result = explain_fund_move(symbol, name, move["change_pct"])
         return {
             "change_pct": move["change_pct"],
             "explanation": result["explanation"],
+            "explanation_zh": result["explanation_zh"],
             "considered": [],
             "holdings": result["holdings"],
         }
@@ -163,4 +240,22 @@ def explain_daily_move(symbol, name, news_limit=6):
         )
         explanation = local_llm_complete(prompt, system=system)
 
-    return {"change_pct": move["change_pct"], "explanation": explanation, "considered": scored, "holdings": []}
+    if translation_available():
+        explanation_zh = translate_to_zh(explanation)
+        # Translate every headline's reason, used or skipped -- a half-translated
+        # audit trail (Chinese explanation, but skipped headlines still in
+        # English) would look broken to a Chinese-reading viewer.
+        for s in scored:
+            s["reason_zh"] = translate_to_zh(s["reason"])
+    else:
+        explanation_zh = None
+        for s in scored:
+            s["reason_zh"] = None
+
+    return {
+        "change_pct": move["change_pct"],
+        "explanation": explanation,
+        "explanation_zh": explanation_zh,
+        "considered": scored,
+        "holdings": [],
+    }

@@ -91,6 +91,20 @@ ollama pull llama3.1:8b
 Everything else on the dashboard works without this -- Today's Briefing just
 shows a setup reminder instead until Ollama is running.
 
+**Optional: Chinese display language.** The sidebar's English/中文 toggle
+translates the whole dashboard immediately (no extra setup) -- but if it's
+switched to Chinese, Today's Briefing's explanation text is translated from
+English by a second local model:
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+An install that always displays in English never calls this model, so only
+pull it on an install that actually uses the Chinese toggle. Without it,
+Briefing text just falls back to English while everything else on the
+dashboard still shows in Chinese.
+
 **If your watchlist is large (20+ stocks):** Today's Briefing needs 2 local-LLM
 calls per stock, which adds up. Instead of generating it live on every page
 load, pre-generate it once a day as a background job:

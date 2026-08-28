@@ -10,7 +10,10 @@ from collections import defaultdict
 import streamlit as st
 
 import stock_toolkit as tk
+from data import settings_store as ss
 from data import watchlist_store as wls
+
+from .i18n import t
 
 PAGE_STYLE = """
 <style>
@@ -81,6 +84,16 @@ def render_table(rows, columns=None):
     )
 
 
+def init_language_state():
+    if "lang" not in st.session_state:
+        st.session_state.lang = ss.load_settings().get("language", "en")
+
+
+def set_language(lang):
+    st.session_state.lang = lang
+    ss.save_settings({"language": lang})
+
+
 def init_watchlist_state():
     if "watchlist" not in st.session_state:
         st.session_state.watchlist = wls.load_watchlist()
@@ -100,24 +113,45 @@ def group_by_industry(watchlist):
     return dict(groups)
 
 
+def render_language_toggle():
+    """Language switcher at the very top of the sidebar -- kept visually
+    simple and prominent, consistent with the large-print/high-contrast
+    style applied for older users."""
+    current = st.session_state.get("lang", "en")
+    options = ["en", "zh"]
+    labels = {"en": "English", "zh": "中文"}
+    choice = st.radio(
+        t("language_label"),
+        options,
+        index=options.index(current),
+        format_func=lambda code: labels[code],
+        horizontal=True,
+        key="lang_toggle",
+    )
+    if choice != current:
+        set_language(choice)
+        st.rerun()
+
+
 def render_sidebar():
     """Watchlist management, grouped by industry (this list can get long --
     50+ stocks is a real use case, not just 5)."""
-    st.header(f"Your stocks ({len(st.session_state.watchlist)})")
+    render_language_toggle()
+    st.header(t("your_stocks", count=len(st.session_state.watchlist)))
 
     for industry, items in sorted(group_by_industry(st.session_state.watchlist).items()):
-        with st.expander(f"{industry} ({len(items)})"):
+        with st.expander(t("industry_group_label", industry=industry, count=len(items))):
             for item in items:
                 if st.session_state.get("confirm_remove") == item["symbol"]:
-                    st.write(f"Remove **{item['name']}**?")
-                    if st.button("Yes, remove", key=f"confirm_remove_{item['symbol']}", use_container_width=True):
+                    st.write(t("remove_confirm", name=item["name"]))
+                    if st.button(t("yes_remove"), key=f"confirm_remove_{item['symbol']}", use_container_width=True):
                         st.session_state.watchlist = [
                             w for w in st.session_state.watchlist if w["symbol"] != item["symbol"]
                         ]
                         save_watchlist()
                         st.session_state.confirm_remove = None
                         st.rerun()
-                    if st.button("Cancel", key=f"cancel_remove_{item['symbol']}", use_container_width=True):
+                    if st.button(t("cancel"), key=f"cancel_remove_{item['symbol']}", use_container_width=True):
                         st.session_state.confirm_remove = None
                         st.rerun()
                     continue
@@ -137,17 +171,17 @@ def render_sidebar():
                     st.rerun()
 
     st.divider()
-    st.subheader("Add a stock")
-    query = st.text_input("Type a company name", placeholder="e.g. Apple, Tencent, Moutai")
+    st.subheader(t("add_a_stock"))
+    query = st.text_input(t("type_company_name"), placeholder=t("type_company_placeholder"))
     if query:
         matches = tk.search_symbol(query, limit=5)
         if not matches:
-            st.write("No matches found. Try a different spelling.")
+            st.write(t("no_matches"))
         for m in matches:
             label = f"{m['name']} ({m['symbol']}, {m['exchange']})"
-            if st.button(f"Add {label}", key=f"add_{m['symbol']}"):
+            if st.button(t("add_button", label=label), key=f"add_{m['symbol']}"):
                 if not any(w["symbol"] == m["symbol"] for w in st.session_state.watchlist):
-                    with st.spinner("Looking up industry..."):
+                    with st.spinner(t("looking_up_industry")):
                         sector_info = tk.get_sector_industry(m["symbol"])
                     st.session_state.watchlist.append({
                         "symbol": m["symbol"],

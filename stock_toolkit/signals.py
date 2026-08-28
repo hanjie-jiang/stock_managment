@@ -13,58 +13,82 @@ from .market_data import _row, get_ticker, key_stats, technical_snapshot
 # ---------------------------------------------------------------------------
 
 def buy_sell_signal(symbol):
+    """Each entry in bullish_signals/bearish_signals is a structured
+    {"code", "params", "text"} dict, not a plain string -- `text` is always
+    the English sentence (what print_buy_sell_signal/the notebook use
+    unchanged); `code`/`params` let the dashboard render the same sentence in
+    another language via i18n.reason_text() without stock_toolkit itself
+    knowing about display language. See specs/001-bilingual-en-zh-toggle.md.
+    """
     stats = key_stats(symbol)
     tech = technical_snapshot(symbol) or {}
 
     bullish, bearish, notes = [], [], []
 
+    def bull(code, text, **params):
+        bullish.append({"code": code, "params": params, "text": text})
+
+    def bear(code, text, **params):
+        bearish.append({"code": code, "params": params, "text": text})
+
     if stats["upside_to_target_pct"] is not None:
         if stats["upside_to_target_pct"] > 15:
-            bullish.append(f"Analyst target implies {stats['upside_to_target_pct']:.1f}% upside")
+            pct = stats["upside_to_target_pct"]
+            bull("analyst_upside", f"Analyst target implies {pct:.1f}% upside", pct=pct)
         elif stats["upside_to_target_pct"] < -10:
-            bearish.append(f"Price is {abs(stats['upside_to_target_pct']):.1f}% above analyst target")
+            pct = abs(stats["upside_to_target_pct"])
+            bear("analyst_downside", f"Price is {pct:.1f}% above analyst target", pct=pct)
 
     if stats["forward_pe"] and stats["trailing_pe"]:
         if stats["forward_pe"] < stats["trailing_pe"] * 0.9:
-            bullish.append("Forward P/E well below trailing P/E (earnings expected to grow into price)")
+            bull("forward_pe_below_trailing",
+                 "Forward P/E well below trailing P/E (earnings expected to grow into price)")
         elif stats["forward_pe"] > stats["trailing_pe"] * 1.1:
-            bearish.append("Forward P/E above trailing P/E (earnings expected to soften)")
+            bear("forward_pe_above_trailing",
+                 "Forward P/E above trailing P/E (earnings expected to soften)")
 
     rp = tech.get("range_position_pct")
     if rp is not None:
         if rp < 25:
-            bullish.append(f"Trading near 52-week low ({rp:.0f}% of range) - potential value entry, or a falling knife")
+            bull("near_52w_low",
+                 f"Trading near 52-week low ({rp:.0f}% of range) - potential value entry, or a falling knife",
+                 rp=rp)
         elif rp > 90:
-            bearish.append(f"Trading near 52-week high ({rp:.0f}% of range) - momentum strong but less margin of safety")
+            bear("near_52w_high",
+                 f"Trading near 52-week high ({rp:.0f}% of range) - momentum strong but less margin of safety",
+                 rp=rp)
 
     rsi = tech.get("rsi14")
     if rsi is not None and not np.isnan(rsi):
         if rsi < 30:
-            bullish.append(f"RSI14 = {rsi:.0f} (oversold)")
+            bull("rsi_oversold", f"RSI14 = {rsi:.0f} (oversold)", rsi=rsi)
         elif rsi > 70:
-            bearish.append(f"RSI14 = {rsi:.0f} (overbought)")
+            bear("rsi_overbought", f"RSI14 = {rsi:.0f} (overbought)", rsi=rsi)
 
     if tech.get("above_sma50") and tech.get("above_sma200"):
-        bullish.append("Price above both 50-day and 200-day moving averages (uptrend)")
+        bull("above_both_sma", "Price above both 50-day and 200-day moving averages (uptrend)")
     elif tech.get("above_sma50") is False and tech.get("above_sma200") is False:
-        bearish.append("Price below both 50-day and 200-day moving averages (downtrend)")
+        bear("below_both_sma", "Price below both 50-day and 200-day moving averages (downtrend)")
 
     if stats["revenue_growth"] and stats["revenue_growth"] < 0:
-        bearish.append(f"Revenue growth negative ({stats['revenue_growth']*100:.1f}%)")
+        pct = stats["revenue_growth"] * 100
+        bear("negative_revenue_growth", f"Revenue growth negative ({pct:.1f}%)", pct=pct)
     if stats["earnings_growth"] and stats["earnings_growth"] < 0:
-        bearish.append(f"Earnings growth negative ({stats['earnings_growth']*100:.1f}%)")
+        pct = stats["earnings_growth"] * 100
+        bear("negative_earnings_growth", f"Earnings growth negative ({pct:.1f}%)", pct=pct)
 
     score = len(bullish) - len(bearish)
     if score >= 2:
-        lean = "Leans BUY"
+        lean_code, lean = "lean_buy", "Leans BUY"
     elif score <= -2:
-        lean = "Leans SELL / avoid adding"
+        lean_code, lean = "lean_sell", "Leans SELL / avoid adding"
     else:
-        lean = "Mixed / HOLD - no strong signal either way"
+        lean_code, lean = "lean_hold", "Mixed / HOLD - no strong signal either way"
 
     return {
         "symbol": symbol,
         "lean": lean,
+        "lean_code": lean_code,
         "score": score,
         "bullish_signals": bullish,
         "bearish_signals": bearish,
@@ -78,10 +102,10 @@ def print_buy_sell_signal(symbol):
     print(f"{symbol}: {r['lean']}  (signal score {r['score']:+d})")
     print("Bullish:")
     for b in r["bullish_signals"]:
-        print(f"  + {b}")
+        print(f"  + {b['text']}")
     print("Bearish:")
     for b in r["bearish_signals"]:
-        print(f"  - {b}")
+        print(f"  - {b['text']}")
     if not r["bullish_signals"] and not r["bearish_signals"]:
         print("  (no strong signals detected)")
 
@@ -164,23 +188,36 @@ def risk_scan(symbol):
     info = get_ticker(symbol).info
 
     flags = []
+
+    def flag(code, text, **params):
+        flags.append({"code": code, "params": params, "text": text})
+
     if stats["beta"] and stats["beta"] > 1.5:
-        flags.append(f"High beta ({stats['beta']:.2f}) - more volatile than the market")
+        flag("high_beta", f"High beta ({stats['beta']:.2f}) - more volatile than the market", beta=stats["beta"])
     if stats["debt_to_equity"] and stats["debt_to_equity"] > 150:
-        flags.append(f"High leverage - debt/equity {stats['debt_to_equity']:.0f}")
+        flag("high_leverage", f"High leverage - debt/equity {stats['debt_to_equity']:.0f}", de=stats["debt_to_equity"])
     if stats["current_ratio"] and stats["current_ratio"] < 1:
-        flags.append(f"Current ratio {stats['current_ratio']:.2f} < 1 - potential short-term liquidity strain")
+        flag("low_current_ratio",
+             f"Current ratio {stats['current_ratio']:.2f} < 1 - potential short-term liquidity strain",
+             cr=stats["current_ratio"])
     vol = tech.get("annualized_volatility_pct")
     if vol and vol > 45:
-        flags.append(f"High annualized volatility ({vol:.0f}%)")
+        flag("high_volatility", f"High annualized volatility ({vol:.0f}%)", vol=vol)
     dd = tech.get("max_drawdown_pct")
     if dd and dd < -40:
-        flags.append(f"Deep historical drawdown seen ({dd:.0f}% peak-to-trough in the lookback window)")
+        flag("deep_drawdown", f"Deep historical drawdown seen ({dd:.0f}% peak-to-trough in the lookback window)", dd=dd)
     short_pct = info.get("shortPercentOfFloat")
     if short_pct and short_pct > 0.1:
-        flags.append(f"Elevated short interest ({short_pct*100:.1f}% of float)")
+        flag("elevated_short_interest", f"Elevated short interest ({short_pct*100:.1f}% of float)", pct=short_pct * 100)
     if stats["profit_margin"] is not None and stats["profit_margin"] < 0:
-        flags.append("Currently unprofitable (negative margin)")
+        flag("unprofitable", "Currently unprofitable (negative margin)")
+
+    if len(flags) >= 3:
+        risk_level_code, risk_level = "risk_high", "HIGH"
+    elif flags:
+        risk_level_code, risk_level = "risk_moderate", "MODERATE"
+    else:
+        risk_level_code, risk_level = "risk_low", "LOW (by these checks)"
 
     return {
         "symbol": symbol,
@@ -191,7 +228,8 @@ def risk_scan(symbol):
         "current_ratio": stats["current_ratio"],
         "short_percent_of_float": short_pct,
         "risk_flags": flags,
-        "risk_level": "HIGH" if len(flags) >= 3 else ("MODERATE" if flags else "LOW (by these checks)"),
+        "risk_level": risk_level,
+        "risk_level_code": risk_level_code,
     }
 
 
@@ -201,7 +239,7 @@ def print_risk_scan(symbol):
     print(f"  beta={r['beta']}, ann. volatility={r['annualized_volatility_pct']}, "
           f"max drawdown={r['max_drawdown_pct']}, D/E={r['debt_to_equity']}, current ratio={r['current_ratio']}")
     for f in r["risk_flags"]:
-        print(f"  ! {f}")
+        print(f"  ! {f['text']}")
 
 
 # ---------------------------------------------------------------------------
@@ -238,26 +276,32 @@ def long_term_value_score(symbol):
     fin = t.financials  # annual
     checks = []
 
-    def add(label, passed, detail=""):
-        checks.append({"check": label, "passed": bool(passed), "detail": detail})
+    def add(code, label, passed, detail=""):
+        # "check"/"detail" stay the plain English label print_long_term_value_score
+        # and the notebook already use; "code"/"text" are additive, for i18n.reason_text()
+        # to render the label (never the numeric detail) in another language.
+        checks.append({
+            "code": code, "params": {}, "text": label,
+            "check": label, "passed": bool(passed), "detail": detail,
+        })
 
     roe = info.get("returnOnEquity")
-    add("ROE > 15%", roe is not None and roe > 0.15, f"ROE={roe}")
+    add("roe_check", "ROE > 15%", roe is not None and roe > 0.15, f"ROE={roe}")
 
     margin = info.get("profitMargins")
-    add("Positive profit margin", margin is not None and margin > 0, f"margin={margin}")
+    add("margin_check", "Positive profit margin", margin is not None and margin > 0, f"margin={margin}")
 
     fcf = info.get("freeCashflow")
-    add("Positive free cash flow", fcf is not None and fcf > 0, f"FCF={fcf}")
+    add("fcf_check", "Positive free cash flow", fcf is not None and fcf > 0, f"FCF={fcf}")
 
     d2e = info.get("debtToEquity")
-    add("Manageable leverage (D/E < 100)", d2e is not None and d2e < 100, f"D/E={d2e}")
+    add("leverage_check", "Manageable leverage (D/E < 100)", d2e is not None and d2e < 100, f"D/E={d2e}")
 
     rev_growth = info.get("revenueGrowth")
-    add("Revenue growing YoY", rev_growth is not None and rev_growth > 0, f"revenue growth={rev_growth}")
+    add("revenue_growth_check", "Revenue growing YoY", rev_growth is not None and rev_growth > 0, f"revenue growth={rev_growth}")
 
     earn_growth = info.get("earningsGrowth")
-    add("Earnings growing YoY", earn_growth is not None and earn_growth > 0, f"earnings growth={earn_growth}")
+    add("earnings_growth_check", "Earnings growing YoY", earn_growth is not None and earn_growth > 0, f"earnings growth={earn_growth}")
 
     rev_row = _row(fin, "Total Revenue")
     consistent_growth = None
@@ -265,18 +309,21 @@ def long_term_value_score(symbol):
         vals = rev_row.dropna().iloc[::-1]  # oldest -> newest
         diffs = vals.diff().dropna()
         consistent_growth = (diffs > 0).sum() >= len(diffs) - 1  # allow one down year
-    add("Multi-year revenue trend mostly up", consistent_growth, "based on annual revenue history")
+    add("revenue_trend_check", "Multi-year revenue trend mostly up", consistent_growth, "based on annual revenue history")
 
     curr_ratio = info.get("currentRatio")
-    add("Current ratio > 1.2 (financial cushion)", curr_ratio is not None and curr_ratio > 1.2, f"current ratio={curr_ratio}")
+    add("current_ratio_check", "Current ratio > 1.2 (financial cushion)", curr_ratio is not None and curr_ratio > 1.2, f"current ratio={curr_ratio}")
 
     passed = sum(1 for c in checks if c["passed"])
     total = len(checks)
-    verdict = "Strong long-term candidate" if passed >= total - 1 else \
-              "Reasonable candidate, some weak spots" if passed >= total * 0.6 else \
-              "Weak fit for long-term/value criteria on these checks"
+    if passed >= total - 1:
+        verdict_code, verdict = "verdict_strong", "Strong long-term candidate"
+    elif passed >= total * 0.6:
+        verdict_code, verdict = "verdict_reasonable", "Reasonable candidate, some weak spots"
+    else:
+        verdict_code, verdict = "verdict_weak", "Weak fit for long-term/value criteria on these checks"
 
-    return {"symbol": symbol, "score": f"{passed}/{total}", "verdict": verdict, "checks": checks}
+    return {"symbol": symbol, "score": f"{passed}/{total}", "verdict": verdict, "verdict_code": verdict_code, "checks": checks}
 
 
 def print_long_term_value_score(symbol):

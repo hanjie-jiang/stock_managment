@@ -61,6 +61,7 @@ def archive_briefings(date_str, watchlist, results):
             "name": names.get(symbol),
             "change_pct": result.get("change_pct"),
             "explanation": result.get("explanation"),
+            "explanation_zh": result.get("explanation_zh"),
             "considered": result.get("considered") or [],
             "holdings": result.get("holdings") or [],
         })
