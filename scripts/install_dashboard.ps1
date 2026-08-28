@@ -84,6 +84,7 @@ $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = Join-Path $RepoRoot "Launch-Dashboard.bat"
 $Shortcut.WorkingDirectory = $RepoRoot
 $Shortcut.Description = "Open the Family Stock Dashboard"
+$Shortcut.IconLocation = Join-Path $RepoRoot "assets\dashboard.ico"
 $Shortcut.Save()
 Write-Host "Shortcut created: $ShortcutPath" -ForegroundColor Green
 
