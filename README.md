@@ -28,7 +28,36 @@ covers:
 > Everything here is data + heuristics, not investment advice -- verify
 > anything decision-critical against the company's actual filings.
 
-## Setup
+## For a family member (no coding required)
+
+If you just want to use the dashboard on your own PC, without touching any
+code:
+
+1. On the GitHub page for this repo, click the green **Code** button, then
+   **Download ZIP**.
+2. Unzip it anywhere (e.g. your Desktop).
+3. Double-click **`Install.bat`** inside the unzipped folder.
+   - If Windows shows a blue "Windows protected your PC" screen, click
+     **More info** then **Run anyway** -- this is normal for a downloaded
+     script and safe for a file you trust.
+   - Click **Yes** on any permission prompts.
+   - This installs Python and [Ollama](https://ollama.com) if you don't
+     already have them, sets up the app, and downloads the local AI model
+     (about 5 GB -- this is the slow part, let it finish).
+4. When it's done, look for a **"Family Stock Dashboard"** icon on your
+   Desktop. Double-click it any time to open the dashboard in your browser.
+   Keep that window open while you're using it; closing it stops the app.
+
+The installer also schedules the daily briefing to prepare itself every
+morning at 7am, so it's usually ready before you open the app.
+
+The dashboard starts with a small 5-stock demo watchlist. To get the same
+watchlist as everyone else in the family, ask whoever set this up to send
+you their `storage/watchlist.json` file to drop into your `storage/`
+folder -- or just add the same stocks yourself using the search box in the
+sidebar.
+
+## Setup (for development)
 
 Requires Python 3.11+.
 
@@ -117,6 +146,8 @@ refetched on every page load.
 ## Project layout
 
 ```
+Install.bat                One-time setup for a family member's own PC (no coding)
+Launch-Dashboard.bat       Opens the dashboard -- what the Desktop shortcut runs
 app.py                    Streamlit dashboard (entry point: streamlit run app.py)
 stock_toolkit/            Core data + analysis package, reused by the app, the
                            notebook, and the background briefing job
@@ -133,6 +164,7 @@ storage/                  Local JSON persistence
 scripts/
   run_daily_briefing.py      Background job: pre-generates Today's Briefing for the
                              whole watchlist (see "Optional: Today's Briefing" above)
+  install_dashboard.ps1      Installer logic behind Install.bat
 notebooks/
   stock_managment.ipynb      Notebook walkthrough of all capabilities
 requirements.txt
