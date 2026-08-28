@@ -45,8 +45,10 @@ code:
      already have them, sets up the app, and downloads the local AI model
      (about 5 GB -- this is the slow part, let it finish).
 4. When it's done, look for a **"Family Stock Dashboard"** icon on your
-   Desktop. Double-click it any time to open the dashboard in your browser.
-   Keep that window open while you're using it; closing it stops the app.
+   Desktop. Double-click it any time to open the dashboard in your browser
+   -- no terminal window, just the browser. It keeps running quietly in the
+   background afterward (harmless, low resource use); clicking the icon
+   again just reopens the browser to it instead of starting a second copy.
 
 The installer also schedules the daily briefing to prepare itself every
 morning at 7am, so it's usually ready before you open the app.
@@ -147,7 +149,9 @@ refetched on every page load.
 
 ```
 Install.bat                One-time setup for a family member's own PC (no coding)
-Launch-Dashboard.bat       Opens the dashboard -- what the Desktop shortcut runs
+Launch-Dashboard.vbs      Opens the dashboard with no visible window -- what the
+                           Desktop shortcut runs
+Launch-Dashboard.bat       Same, but with a visible terminal window (troubleshooting)
 app.py                    Streamlit dashboard (entry point: streamlit run app.py)
 stock_toolkit/            Core data + analysis package, reused by the app, the
                            notebook, and the background briefing job
@@ -165,6 +169,8 @@ scripts/
   run_daily_briefing.py      Background job: pre-generates Today's Briefing for the
                              whole watchlist (see "Optional: Today's Briefing" above)
   install_dashboard.ps1      Installer logic behind Install.bat
+  launch_dashboard.ps1       Launch logic behind Launch-Dashboard.vbs
+  generate_icon.py           Regenerates assets/dashboard.ico if it ever needs to change
 notebooks/
   stock_managment.ipynb      Notebook walkthrough of all capabilities
 requirements.txt
