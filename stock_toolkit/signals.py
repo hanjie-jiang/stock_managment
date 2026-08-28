@@ -209,6 +209,30 @@ def print_risk_scan(symbol):
 # ---------------------------------------------------------------------------
 
 def long_term_value_score(symbol):
+    """Checklist-style long-term/value screen. Each check is a widely-cited textbook
+    heuristic, not a tuned or backtested threshold -- see docs/METRICS.md for what each
+    metric actually measures and why it can mislead.
+
+    All seven thresholds are sector-blind by design (this function doesn't know the
+    symbol's industry), which is a real limitation, not an oversight: a utility carrying
+    2x the debt of a software company isn't "worse", it's normal for a capital-intensive,
+    regulated business with stable cash flows. Same story for current ratio in asset-light
+    service businesses that run on negative working capital by design. Treat a low score
+    here as "worth a closer, sector-aware look", not as a verdict on its own.
+
+    - ROE > 15%: the common "above-average capital efficiency" bar (the Buffett-style
+      heuristic). Inflates under high leverage or aggressive buybacks (shrinks the equity
+      denominator without operating improvement) -- pair with the D/E check below rather
+      than reading ROE alone.
+    - D/E < 100 (debt roughly at or below equity): a rough "not overleveraged" line.
+      Realistic normal ranges vary by an order of magnitude across sectors (utilities and
+      financials routinely run well above this; asset-light software companies routinely
+      run near zero).
+    - Current ratio > 1.2: short-term assets moderately exceed short-term liabilities, a
+      conventional liquidity-cushion threshold. Less meaningful for subscription/service
+      businesses that collect cash upfront and carry deferred revenue as a liability --
+      a "low" ratio there can be a sign of strength, not distress.
+    """
     t = get_ticker(symbol)
     info = t.info
     fin = t.financials  # annual
