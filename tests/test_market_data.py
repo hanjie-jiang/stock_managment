@@ -1,5 +1,7 @@
 """Offline tests against captured fixtures (see tests/fixtures/). No network calls."""
 
+import pandas as pd
+
 from stock_toolkit import funds, market_data
 from tests.fixtures.loader import patch_yfinance
 
@@ -25,6 +27,26 @@ def test_technical_snapshot_computes_from_history(monkeypatch):
     assert snap is not None
     assert snap["rsi14"] == snap["rsi14"]  # not NaN
     assert snap["sma50"] is not None
+
+
+def test_technical_snapshot_sma200_none_under_200_sessions(monkeypatch):
+    """A symbol with under 200 sessions of history (recent listing, long halt) must report
+    sma200 as None, not silently substitute sma50's value under the sma200 key."""
+    dates = pd.date_range("2026-01-01", periods=100, freq="B")
+    close = pd.Series(range(100, 200), index=dates, dtype=float)
+    hist = pd.DataFrame({"Close": close})
+
+    class _FakeTicker:
+        def history(self, period="1y", auto_adjust=True, **kwargs):
+            return hist
+
+    monkeypatch.setattr(market_data.yf, "Ticker", lambda symbol: _FakeTicker())
+    market_data._TICKER_CACHE.clear()
+
+    snap = market_data.technical_snapshot("NEWLISTING")
+    assert snap["sma50"] is not None
+    assert snap["sma200"] is None
+    assert snap["above_sma200"] is None
 
 
 def test_quarterly_report_summary_a_share(monkeypatch):

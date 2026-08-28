@@ -270,7 +270,7 @@ def technical_snapshot(symbol, period="1y"):
     return {
         "last_price": last_price,
         "sma50": sma50,
-        "sma200": sma50 if sma200 is None else sma200,
+        "sma200": sma200,
         "rsi14": rsi14,
         "range_position_pct": range_position,
         "annualized_volatility_pct": annualized_vol,
