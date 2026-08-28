@@ -102,6 +102,58 @@ def compare_stocks(symbols):
     return df[[c for c in cols if c in df.columns]]
 
 
+def _col(df, name):
+    return df[name] if name in df.columns else pd.Series(index=df.index, dtype=float)
+
+
+def relative_rank(df):
+    """Ranks a peer set (e.g. one industry group from compare_stocks()) against
+    each other on valuation, profitability, growth, and analyst upside -- unlike
+    compare_stocks(), which just lists raw stats side by side. Needs 2+ rows;
+    a dimension is skipped if fewer than 2 peers have data for it, and a peer
+    missing a sub-metric just doesn't contribute it rather than being penalized.
+    Risk/income fields (beta, debt/equity, current ratio, dividend yield) are
+    left out on purpose -- those are a preference, not a "better/worse" axis.
+    """
+    empty = pd.DataFrame(columns=["rank", "out_of", "composite_percentile", "best_factor", "worst_factor"])
+    if len(df) < 2:
+        return empty
+
+    pe = _col(df, "forward_pe").where(_col(df, "forward_pe").notna(), _col(df, "trailing_pe"))
+    dimensions = {
+        "valuation": ([pe, _col(df, "peg_ratio"), _col(df, "ev_to_ebitda")], False),
+        "profitability": ([_col(df, "profit_margin"), _col(df, "roe")], True),
+        "growth": ([_col(df, "revenue_growth"), _col(df, "earnings_growth")], True),
+        "analyst upside": ([_col(df, "upside_to_target_pct")], True),
+    }
+
+    dim_percentiles = {}
+    for name, (series_list, higher_is_better) in dimensions.items():
+        sub_pcts = []
+        for s in series_list:
+            valid = s.dropna()
+            if len(valid) < 2:
+                continue
+            sub_pcts.append((valid.rank(pct=True, ascending=higher_is_better) * 100).reindex(df.index))
+        if sub_pcts:
+            dim_percentiles[name] = pd.concat(sub_pcts, axis=1).mean(axis=1, skipna=True)
+
+    if not dim_percentiles:
+        return empty
+
+    dim_frame = pd.DataFrame(dim_percentiles)
+    result = pd.DataFrame({
+        "composite_percentile": dim_frame.mean(axis=1, skipna=True).round(2),
+        "best_factor": dim_frame.idxmax(axis=1, skipna=True),
+        "worst_factor": dim_frame.idxmin(axis=1, skipna=True),
+    }).dropna(subset=["composite_percentile"])
+
+    result["rank"] = result["composite_percentile"].rank(method="min", ascending=False).astype(int)
+    result["out_of"] = len(result)
+    result = result.sort_values("rank")
+    return result[["rank", "out_of", "composite_percentile", "best_factor", "worst_factor"]]
+
+
 # ---------------------------------------------------------------------------
 # 5) Risk scan
 # ---------------------------------------------------------------------------

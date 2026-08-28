@@ -405,25 +405,40 @@ with tab_compare:
     with st.spinner(f"Fetching comparison data for {len(all_symbols)} stocks..."):
         compare_df = load_compare_data(tuple(all_symbols))
 
+    symbols_by_industry = defaultdict(list)
+    for sym in compare_df.index:
+        symbols_by_industry[industry_by_symbol.get(sym, "Other / Unclassified")].append(sym)
+
     rows_by_industry = defaultdict(list)
-    for sym, row in compare_df.iterrows():
-        price = _val(row, "price")
-        pe = _val(row, "trailing_pe")
-        margin = _val(row, "profit_margin")
-        rev_growth = _val(row, "revenue_growth")
-        div_yield = _val(row, "dividend_yield")
-        beta = _val(row, "beta")
-        recommendation = _val(row, "analyst_recommendation")
-        rows_by_industry[industry_by_symbol.get(sym, "Other / Unclassified")].append({
-            "Stock": f"{row['name']} ({sym})",
-            "Price": f"{price:,.2f}" if price is not None else "n/a",
-            "P/E ratio": f"{pe:.1f}" if pe is not None else "n/a",
-            "Profit margin": f"{margin*100:.1f}%" if margin is not None else "n/a",
-            "Revenue growth": f"{rev_growth*100:+.1f}%" if rev_growth is not None else "n/a",
-            "Dividend yield": f"{div_yield:.2f}%" if div_yield is not None else "n/a",
-            "Risk (beta)": f"{beta:.2f}" if beta is not None else "n/a",
-            "Analyst view": recommendation.replace("_", " ").title() if recommendation else "n/a",
-        })
+    for industry, symbols in symbols_by_industry.items():
+        ranks = tk.relative_rank(compare_df.loc[symbols]) if len(symbols) >= 2 else None
+        for sym in symbols:
+            row = compare_df.loc[sym]
+            price = _val(row, "price")
+            pe = _val(row, "trailing_pe")
+            margin = _val(row, "profit_margin")
+            rev_growth = _val(row, "revenue_growth")
+            div_yield = _val(row, "dividend_yield")
+            beta = _val(row, "beta")
+            recommendation = _val(row, "analyst_recommendation")
+            if ranks is None:
+                rel_rank = "n/a (only stock in this industry)"
+            elif sym in ranks.index:
+                r = ranks.loc[sym]
+                rel_rank = f"#{r['rank']} of {r['out_of']} -- best on {r['best_factor']}"
+            else:
+                rel_rank = "not enough data to rank"
+            rows_by_industry[industry].append({
+                "Stock": f"{row['name']} ({sym})",
+                "Price": f"{price:,.2f}" if price is not None else "n/a",
+                "P/E ratio": f"{pe:.1f}" if pe is not None else "n/a",
+                "Profit margin": f"{margin*100:.1f}%" if margin is not None else "n/a",
+                "Revenue growth": f"{rev_growth*100:+.1f}%" if rev_growth is not None else "n/a",
+                "Dividend yield": f"{div_yield:.2f}%" if div_yield is not None else "n/a",
+                "Risk (beta)": f"{beta:.2f}" if beta is not None else "n/a",
+                "Analyst view": recommendation.replace("_", " ").title() if recommendation else "n/a",
+                "Relative rank": rel_rank,
+            })
 
     for industry in sorted(rows_by_industry):
         with st.expander(f"{industry} ({len(rows_by_industry[industry])})", expanded=len(rows_by_industry) <= 3):

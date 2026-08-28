@@ -56,6 +56,7 @@ from .signals import (
     print_buy_sell_signal,
     print_long_term_value_score,
     print_risk_scan,
+    relative_rank,
     risk_scan,
 )
 
@@ -84,6 +85,7 @@ __all__ = [
     "print_research",
     "print_risk_scan",
     "quarterly_report_summary",
+    "relative_rank",
     "research",
     "risk_scan",
     "score_news_relevance",
