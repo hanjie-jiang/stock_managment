@@ -239,6 +239,16 @@ def _rsi(close, period=14):
     return rsi
 
 
+def price_history(symbol, period="1y"):
+    """Daily closing price series, for charting (technical_snapshot() only
+    returns summary stats, not the underlying series)."""
+    t = get_ticker(symbol)
+    hist = t.history(period=period, auto_adjust=True)
+    if hist.empty:
+        return None
+    return hist["Close"]
+
+
 def technical_snapshot(symbol, period="1y"):
     t = get_ticker(symbol)
     hist = t.history(period=period, auto_adjust=True)
