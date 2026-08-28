@@ -1,7 +1,7 @@
 """IdleShutdownWatcher's tick() is a pure state machine (see auto_shutdown.py
 docstring for why) -- tested here with a fake clock, no real threads/sleeps."""
 
-from webapp.auto_shutdown import IdleShutdownWatcher
+from shell.auto_shutdown import IdleShutdownWatcher
 
 
 def test_does_not_shut_down_before_first_connection():

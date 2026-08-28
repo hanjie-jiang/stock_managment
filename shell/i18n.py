@@ -90,7 +90,7 @@ STRINGS = {
         ),
         "briefings_ready_status": (
             "{ready}/{total} briefings ready for today. {missing} missing (run "
-            "`python tools/run_daily_briefing.py` to pre-generate all of them in the "
+            "`python jobs/run_daily_briefing.py` to pre-generate all of them in the "
             "background, or generate just the missing ones now)."
         ),
         "generate_missing_button": "Generate the {missing} missing briefings now",
@@ -186,7 +186,7 @@ STRINGS = {
         ),
         "briefings_ready_status": (
             "今天已生成 {ready}/{total} 份简报，还有 {missing} 份未生成（运行 "
-            "`python tools/run_daily_briefing.py` 可在后台预先生成全部简报，"
+            "`python jobs/run_daily_briefing.py` 可在后台预先生成全部简报，"
             "也可以现在只生成缺失的部分）。"
         ),
         "generate_missing_button": "立即生成缺失的 {missing} 份简报",

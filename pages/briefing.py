@@ -1,6 +1,6 @@
 """Today's Briefing -- why each watchlist stock moved, in plain English.
 
-Reads from a cache pre-computed by tools/run_daily_briefing.py (see README) so
+Reads from a cache pre-computed by jobs/run_daily_briefing.py (see README) so
 opening this page is instant regardless of watchlist size -- at 50+ stocks,
 generating live on every page load (2 local-LLM calls each) would take many
 minutes. Anything missing/stale can still be generated on demand.
@@ -12,8 +12,8 @@ import streamlit as st
 
 import stock_toolkit as tk
 from data import briefing_store as bs
-from webapp import ui_common as ui
-from webapp.i18n import get_lang, t
+from shell import ui_common as ui
+from shell.i18n import get_lang, t
 
 
 def render_briefing_entry(w, briefing):

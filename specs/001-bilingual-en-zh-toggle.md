@@ -53,7 +53,7 @@ alongside the existing `ui.init_watchlist_state()`.
 **Static UI text.** New `i18n.py` (plain module next to `ui_common.py`, not inside
 `stock_toolkit` -- this is presentation, same reasoning `ui_common.py` already gives for
 staying outside the toolkit package. Both, plus `auto_shutdown.py`, moved into a small
-`webapp/` package shortly after this feature shipped, once the repo root had accumulated
+`shell/` package shortly after this feature shipped, once the repo root had accumulated
 enough loose presentation-layer modules to warrant it -- same package, same reasoning,
 just grouped together instead of loose at root). Holds a flat dict of
 `{"en": {key: text}, "zh": {key: text}}` and a lookup helper, e.g. `t(key, **kwargs)`

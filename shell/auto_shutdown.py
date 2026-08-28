@@ -2,7 +2,7 @@
 so the next click on the Desktop shortcut starts a genuinely fresh process
 instead of reconnecting to one still running yesterday's code.
 
-Why this exists: launch_dashboard.ps1 (see tools/) checks whether something is
+Why this exists: launch_dashboard.ps1 (see launcher/) checks whether something is
 already listening on port 8501 and, if so, just reopens the browser to it
 instead of starting a new instance -- correct behavior if the dashboard is
 still open in another tab, but a footgun if the old process never exited,

@@ -6,8 +6,8 @@ import streamlit as st
 
 import stock_toolkit as tk
 from collections import defaultdict
-from webapp import ui_common as ui
-from webapp.i18n import code_text, dim_label, reason_text, t
+from shell import ui_common as ui
+from shell.i18n import code_text, dim_label, reason_text, t
 
 symbol_names = {w["symbol"]: w["name"] for w in st.session_state.watchlist}
 symbols = list(symbol_names.keys())

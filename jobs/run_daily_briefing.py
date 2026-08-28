@@ -5,7 +5,7 @@ this matters (2 local-LLM calls per stock).
 
 Run once a day (see README.md for Windows Task Scheduler setup):
 
-    python tools/run_daily_briefing.py
+    python jobs/run_daily_briefing.py
 
 Needs Ollama running locally, same as the live briefing.
 """
@@ -16,7 +16,7 @@ from datetime import date
 from pathlib import Path
 
 # Allow importing stock_toolkit/data from the project root when this
-# script runs from inside tools/ (e.g. as a Task Scheduler target).
+# script runs from inside jobs/ (e.g. as a Task Scheduler target).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import stock_toolkit as tk

@@ -1,6 +1,6 @@
 """Local cache for Today's Briefing results.
 
-Written by tools/run_daily_briefing.py (the background job), read by
+Written by jobs/run_daily_briefing.py (the background job), read by
 app.py. Gitignored -- this is generated data that's stale by the next day,
 not worth version-controlling.
 """
