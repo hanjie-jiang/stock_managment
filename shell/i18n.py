@@ -30,8 +30,12 @@ STRINGS = {
         "fetching_data": "Fetching the latest data for {symbol}...",
         "current_price": "Current price",
         "risk_level": "Risk level",
-        "long_term_fit": "Long-term fit",
-        "signal_prefix": "Signal: {lean}",
+        "long_term_fit": "Long-Term Fit",
+        "right_now_prefix": "Right Now: {lean}",
+        "today_price_action": "Today's Price Action: {read}",
+        "what_this_means": "What does this mean?",
+        "long_term_points_header": "Long-term (business fundamentals)",
+        "technical_points_header": "Short-term (today's price action)",
         "tab_overview": "Overview",
         "tab_reasons": "Why?",
         "tab_report": "Latest Quarter",
@@ -129,7 +133,11 @@ STRINGS = {
         "current_price": "当前价格",
         "risk_level": "风险等级",
         "long_term_fit": "长期价值评分",
-        "signal_prefix": "信号：{lean}",
+        "right_now_prefix": "当前判断：{lean}",
+        "today_price_action": "今日价格走势：{read}",
+        "what_this_means": "这是什么意思？",
+        "long_term_points_header": "长期（基本面）",
+        "technical_points_header": "短期（今日价格走势）",
         "tab_overview": "概览",
         "tab_reasons": "原因？",
         "tab_report": "最新季报",
@@ -244,19 +252,136 @@ REASON_TEMPLATES = {
         "lean_buy": "偏向买入",
         "lean_sell": "偏向卖出 / 不建议加仓",
         "lean_hold": "中性 / 持有 -- 没有明显信号",
+        "tech_bullish": "偏多",
+        "tech_bearish": "偏空",
+        "tech_neutral": "中性",
         "risk_high": "高",
         "risk_moderate": "中等",
         "risk_low": "低（基于这些检查）",
         "verdict_strong": "长期价值良好",
         "verdict_reasonable": "尚可，存在一些薄弱之处",
         "verdict_weak": "在这些标准下长期/价值属性较弱",
-        "horizon_technical": "短期（数周）-- 基于价格走势",
-        "horizon_fundamental": "中长期（数季度）-- 基于基本面",
-        "horizon_mixed": "综合期限 -- 技术面与基本面指向一致",
         "dim_valuation": "估值",
         "dim_profitability": "盈利能力",
         "dim_growth": "成长性",
         "dim_analyst_upside": "分析师上涨空间",
+    },
+}
+
+# Plain-language "what does this actually measure, and what counts as a good
+# reading" line for every threshold-based check the dashboard shows a
+# pass/fail or bullish/bearish judgment for -- condensed from
+# docs/METRICS.md's fuller entries (that file stays the source of truth for
+# the underlying explanation; these are UI-length summaries of it, not a
+# second independent one to keep in sync by hand). Added so a family member
+# doesn't need to already know what "oversold" or "ROE > 15%" means to read
+# the dashboard -- see specs/003-horizon-tagged-signals.md.
+CRITERIA_TEXT = {
+    "en": {
+        "rsi_oversold": (
+            "Based on the last 14 trading days, scored 0-100. Below 30 = oversold "
+            "(dropped sharply, might bounce back). Above 70 = overbought (risen "
+            "sharply, might pull back)."
+        ),
+        "rsi_overbought": (
+            "Based on the last 14 trading days, scored 0-100. Below 30 = oversold "
+            "(dropped sharply, might bounce back). Above 70 = overbought (risen "
+            "sharply, might pull back)."
+        ),
+        "near_52w_low": (
+            "Where the price sits between its highest and lowest point in the past "
+            "year. Below 25% = near the yearly low. Above 90% = near the yearly high."
+        ),
+        "near_52w_high": (
+            "Where the price sits between its highest and lowest point in the past "
+            "year. Below 25% = near the yearly low. Above 90% = near the yearly high."
+        ),
+        "above_both_sma": (
+            "Compares today's price to its 50-day and 200-day averages. Above both "
+            "= uptrend. Below both = downtrend."
+        ),
+        "below_both_sma": (
+            "Compares today's price to its 50-day and 200-day averages. Above both "
+            "= uptrend. Below both = downtrend."
+        ),
+        "forward_pe_below_trailing": (
+            "Compares what the stock costs against expected next-year earnings vs. "
+            "the last 12 months' earnings -- forward P/E well below trailing "
+            "suggests earnings are expected to grow into the price."
+        ),
+        "forward_pe_above_trailing": (
+            "Compares what the stock costs against expected next-year earnings vs. "
+            "the last 12 months' earnings -- forward P/E above trailing suggests "
+            "earnings are expected to soften."
+        ),
+        "analyst_upside": (
+            "How far the current price sits from the average Wall Street analyst "
+            "price target. Analyst targets skew optimistic industry-wide, so treat "
+            "this as one data point, not a prediction."
+        ),
+        "analyst_downside": (
+            "How far the current price sits from the average Wall Street analyst "
+            "price target. Analyst targets skew optimistic industry-wide, so treat "
+            "this as one data point, not a prediction."
+        ),
+        "roe_check": (
+            "Net income as a percent of shareholder equity -- how much profit per "
+            "dollar shareholders have invested. Above 15% is a common bar for "
+            "above-average capital efficiency."
+        ),
+        "leverage_check": (
+            "Total debt compared to shareholder equity. Below 100 is read as "
+            "manageable leverage here -- but normal ranges vary a lot by industry "
+            "(utilities and banks normally run higher)."
+        ),
+        "current_ratio_check": (
+            "Short-term assets divided by short-term liabilities. Above 1.2 means "
+            "a comfortable cushion to cover near-term bills."
+        ),
+        "margin_check": (
+            "Net income divided by revenue -- how much of every dollar of sales "
+            "ends up as profit."
+        ),
+        "fcf_check": (
+            "Cash left over after running and maintaining the business, after "
+            "capital spending."
+        ),
+        "revenue_growth_check": "Total revenue compared to the same period a year ago.",
+        "earnings_growth_check": (
+            "Net income compared to the same period a year ago. Noisier than "
+            "revenue growth -- a one-off item can swing it without reflecting the "
+            "ongoing business."
+        ),
+        "revenue_trend_check": (
+            "Whether annual revenue has mostly risen over the last several years, "
+            "allowing one down year."
+        ),
+    },
+    "zh": {
+        "rsi_oversold": (
+            "基于最近14个交易日计算，取值范围0-100。低于30 = 超卖（跌幅较大，可能反弹）。"
+            "高于70 = 超买（涨幅较大，可能回调）。"
+        ),
+        "rsi_overbought": (
+            "基于最近14个交易日计算，取值范围0-100。低于30 = 超卖（跌幅较大，可能反弹）。"
+            "高于70 = 超买（涨幅较大，可能回调）。"
+        ),
+        "near_52w_low": "显示当前价格在过去一年最高价与最低价之间所处的位置。低于25% = 接近年内低点。高于90% = 接近年内高点。",
+        "near_52w_high": "显示当前价格在过去一年最高价与最低价之间所处的位置。低于25% = 接近年内低点。高于90% = 接近年内高点。",
+        "above_both_sma": "将今日价格与50日和200日均价进行比较。同时高于两者 = 上升趋势。同时低于两者 = 下降趋势。",
+        "below_both_sma": "将今日价格与50日和200日均价进行比较。同时高于两者 = 上升趋势。同时低于两者 = 下降趋势。",
+        "forward_pe_below_trailing": "比较股价相对于预期下一年盈利与过去12个月盈利的倍数 -- 预期市盈率明显低于历史市盈率，说明盈利预计将追上股价。",
+        "forward_pe_above_trailing": "比较股价相对于预期下一年盈利与过去12个月盈利的倍数 -- 预期市盈率高于历史市盈率，说明盈利预计将走弱。",
+        "analyst_upside": "当前股价与华尔街分析师平均目标价之间的差距。分析师目标价在行业内普遍偏乐观，因此应将其视为参考数据之一，而非预测。",
+        "analyst_downside": "当前股价与华尔街分析师平均目标价之间的差距。分析师目标价在行业内普遍偏乐观，因此应将其视为参考数据之一，而非预测。",
+        "roe_check": "净利润占股东权益的百分比 -- 衡量股东每投入一美元能产生多少利润。高于15%通常被视为资本使用效率较高的门槛。",
+        "leverage_check": "总负债与股东权益的比较。此处低于100被视为杠杆水平可控 -- 但不同行业的正常区间差异很大（公用事业和银行通常更高）。",
+        "current_ratio_check": "流动资产除以流动负债。高于1.2意味着有较充足的缓冲来覆盖短期账单。",
+        "margin_check": "净利润除以营业收入 -- 衡量每一美元销售额中有多少转化为利润。",
+        "fcf_check": "扣除资本支出后，公司经营和维护业务所剩下的现金。",
+        "revenue_growth_check": "与去年同期相比的总营收变化。",
+        "earnings_growth_check": "与去年同期相比的净利润变化。比营收增长波动更大 -- 一次性项目可能在不反映实际经营状况的情况下大幅影响这一数字。",
+        "revenue_trend_check": "过去几年年度营收是否总体呈上升趋势（允许一年下降）。",
     },
 }
 
@@ -306,3 +431,13 @@ def dim_label(dim_name):
     lang = get_lang()
     key = "dim_" + dim_name.replace(" ", "_")
     return REASON_TEMPLATES.get(lang, {}).get(key, dim_name)
+
+
+def criteria_text(code):
+    """Plain-language criteria line for a structured reason code (e.g.
+    "rsi_oversold" -> what RSI measures and what counts as oversold), for
+    display under that check's bullet/checklist row. Returns None (render
+    nothing) for a code with no explainer -- not every check needs one, e.g.
+    the negative-growth checks already read plainly in their own text."""
+    lang = get_lang()
+    return CRITERIA_TEXT.get(lang, {}).get(code) or CRITERIA_TEXT["en"].get(code)

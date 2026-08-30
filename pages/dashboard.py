@@ -7,7 +7,7 @@ import streamlit as st
 import stock_toolkit as tk
 from collections import defaultdict
 from shell import ui_common as ui
-from shell.i18n import code_text, dim_label, reason_text, t
+from shell.i18n import code_text, criteria_text, dim_label, reason_text, t
 
 symbol_names = {w["symbol"]: w["name"] for w in st.session_state.watchlist}
 symbols = list(symbol_names.keys())
@@ -60,9 +60,40 @@ elif "SELL" in signal["lean"]:
 
 lean_display = code_text(signal["lean_code"], signal["lean"])
 st.markdown(
-    f'<div class="verdict-card {verdict_class}">{t("signal_prefix", lean=lean_display)}</div>',
+    f'<div class="verdict-card {verdict_class}">{t("right_now_prefix", lean=lean_display)}</div>',
     unsafe_allow_html=True,
 )
+
+technical_display = code_text(signal["technical_read_code"], signal["technical_read"])
+st.caption(t("today_price_action", read=technical_display))
+technical_bull = [b for b in signal["bullish_signals"] if b["horizon"] == "technical"]
+technical_bear = [b for b in signal["bearish_signals"] if b["horizon"] == "technical"]
+if technical_bull or technical_bear:
+    with st.expander(t("what_this_means")):
+        for b in technical_bull + technical_bear:
+            st.write(f"- {reason_text(b)}")
+            crit = criteria_text(b["code"])
+            if crit:
+                st.caption(crit)
+
+def _render_signal_group(bull_list, bear_list):
+    if bull_list:
+        st.write(t("points_in_favor"))
+        for b in bull_list:
+            st.write(f"- {reason_text(b)}")
+            crit = criteria_text(b["code"])
+            if crit:
+                st.caption(crit)
+    if bear_list:
+        st.write(t("points_of_caution"))
+        for b in bear_list:
+            st.write(f"- {reason_text(b)}")
+            crit = criteria_text(b["code"])
+            if crit:
+                st.caption(crit)
+    if not bull_list and not bear_list:
+        st.write(t("no_strong_signals"))
+
 
 tab_overview, tab_reasons, tab_report, tab_compare = st.tabs(
     [t("tab_overview"), t("tab_reasons"), t("tab_report"), t("tab_compare")]
@@ -110,16 +141,13 @@ with tab_overview:
 
 with tab_reasons:
     st.subheader(t("why_this_signal"))
-    if signal["bullish_signals"]:
-        st.write(t("points_in_favor"))
-        for b in signal["bullish_signals"]:
-            st.write(f"- {reason_text(b)}")
-    if signal["bearish_signals"]:
-        st.write(t("points_of_caution"))
-        for b in signal["bearish_signals"]:
-            st.write(f"- {reason_text(b)}")
-    if not signal["bullish_signals"] and not signal["bearish_signals"]:
-        st.write(t("no_strong_signals"))
+    st.markdown(f"**{t('long_term_points_header')}**")
+    _render_signal_group(
+        [b for b in signal["bullish_signals"] if b["horizon"] == "fundamental"],
+        [b for b in signal["bearish_signals"] if b["horizon"] == "fundamental"],
+    )
+    st.markdown(f"**{t('technical_points_header')}**")
+    _render_signal_group(technical_bull, technical_bear)
 
     st.subheader(t("risk_flags_header"))
     if risk["risk_flags"]:
@@ -132,6 +160,9 @@ with tab_reasons:
     for c in value["checks"]:
         icon = "✅" if c["passed"] else ("❌" if c["passed"] is False else "❔")
         st.write(f"{icon} {reason_text(c)}")
+        crit = criteria_text(c["code"])
+        if crit:
+            st.caption(crit)
 
 with tab_report:
     if "error" in quarterly:

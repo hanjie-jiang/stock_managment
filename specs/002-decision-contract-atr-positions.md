@@ -24,7 +24,8 @@ scope a "strategy-like" feature without specifics.
 **In scope:**
 - ATR(14) added to `technical_snapshot()`.
 - `buy_sell_signal()` gains `entry_zone`, `invalidation_level`, `invalidation_condition`,
-  `horizon`, `suggested_first_tranche_pct`.
+  `suggested_first_tranche_pct`. (The `horizon` field originally scoped here is
+  superseded by specs/003-horizon-tagged-signals.md -- see Design.)
 - New `data/positions_store.py` + gitignored `data/positions.json`: one record per symbol
   (shares, cost basis, purchase date, free-text thesis and sell-trigger notes).
 - Dashboard: position info shown next to live price for symbols the family actually holds,
@@ -74,6 +75,14 @@ This is the real design fork, worth confirming before writing code -- the specif
 multipliers below are illustrative heuristics, not backtested, in the same spirit as
 `long_term_value_score`'s docstring already disclaims for its own thresholds.
 
+**Superseded by specs/003-horizon-tagged-signals.md:** `lean` and `score` below now refer
+to specs/003's fundamentals-only `lean`/`fundamental_score` (stable across days, moves
+only when the underlying fundamentals change), not the original pooled score this spec
+was first written against -- see specs/003's Design section for why. This spec no longer
+computes its own `horizon` field; specs/003 provides `lean` (long-term) and
+`technical_read` (short-term) directly, and 002 only needs the former to gate
+`entry_zone`/`suggested_first_tranche_pct`.
+
 **Recommended: ATR-anchored, tied to trend structure where one exists.**
 
 - `entry_zone`: only populated when `lean == "Leans BUY"` (a SELL or Mixed/HOLD lean has
@@ -88,20 +97,16 @@ multipliers below are illustrative heuristics, not backtested, in the same spiri
   the two disagree. Computed whenever `above_sma200`/`atr14` are available, regardless of
   lean (a SELL-leaning stock the family already holds still benefits from an invalidation
   reference, even with no `entry_zone`).
-- `horizon`: a lightweight two-bucket read of which signals actually fired, not the full
-  per-signal horizon tagging that the separate horizon-tagged-signals backlog item (still
-  open) will eventually do properly. Bucket the existing checks as *technical* (RSI14,
-  52-week range position, SMA trend) vs *fundamental* (analyst upside, forward/trailing P/E,
-  revenue/earnings growth) at the point `buy_sell_signal` already appends them, and label:
-  "Short-term (weeks) -- based on price action" if only technical checks fired, "Medium/
-  long-term (quarters) -- based on fundamentals" if only fundamental checks fired, "Mixed
-  horizon -- technical and fundamental signals both point this way" if both did.
 - `suggested_first_tranche_pct`: only populated when `lean == "Leans BUY"`. Combines
   conviction (`|score|`) and relative volatility (`atr14_pct`): `50%` if `score >= 3` and
   `atr14_pct < 3`; `25%` if `atr14_pct > 6` (high relative volatility caps the first tranche
   regardless of score); `33%` otherwise. The idea is scaling in, not "how much to own
   total" -- a smaller first tranche for a choppier stock, a larger one when both conviction
-  and calm volatility line up.
+  and calm volatility line up. Note: `score` here is now `fundamental_score` (max
+  magnitude 4, per specs/003), not the original pooled score (max magnitude 6) this
+  breakpoint was first written against -- `score >= 3` is a proportionally higher bar
+  than it was when this spec was drafted; worth re-checking against real data once
+  specs/003 ships rather than assuming the old breakpoint still lands right.
 
 **Alternative: fixed, symbol-agnostic numbers** -- e.g. always `+-5%` for `entry_zone`,
 always `-10%` for `invalidation_level`, always `33%` first tranche. Simpler to implement and
@@ -155,7 +160,8 @@ horizon but no entry zone or tranche size, per the Design section above).
 The dad's install gains a per-stock block showing what he actually owns and whether he's up
 or down, right next to the price he already looks at -- no new concept beyond "shares" and
 "cost", both filled in once when he adds a position. The "Why?" tab's new fields (entry
-zone, invalidation level, horizon, first-tranche size) are the more novel piece: they read as
+zone, invalidation level, first-tranche size -- horizon now comes from
+specs/003-horizon-tagged-signals.md instead) are the more novel piece: they read as
 plain sentences with a number and a reason ("daily close falls below $142.10, the 200-day
 average"), not jargon, but they are new ideas (scaling in, a specific dollar level to be
 "wrong" at) that didn't exist in the app before -- worth a short plain-language explainer
@@ -172,8 +178,6 @@ same `hist` object `technical_snapshot()` already fetches, no new network call.
   `suggested_first_tranche_pct` only when `lean == "Leans BUY"`; both `None` otherwise.
 - `buy_sell_signal()` returns `invalidation_level` and `invalidation_condition` whenever
   `atr14`/`above_sma200` are available, independent of lean.
-- `horizon` reflects which category of check (technical vs. fundamental) actually fired,
-  per the two-bucket rule above.
 - `print_buy_sell_signal()` and any other existing consumer of `buy_sell_signal()`'s return
   dict continue to work unchanged -- new keys are additive, nothing existing is renamed or
   removed.
@@ -189,15 +193,18 @@ same `hist` object `technical_snapshot()` already fetches, no new network call.
 
 ## Open questions
 
+- **Confirm this spec now depends on specs/003-horizon-tagged-signals.md shipping
+  first.** `entry_zone`/`suggested_first_tranche_pct`/`horizon`-gating all read `lean`,
+  which specs/003 redefines from a pooled score to a fundamentals-only one -- implementing
+  002 against the current `lean` (pooled, flips daily per the user's original complaint)
+  and then re-wiring it once 003 lands is possible but means doing the gating logic twice;
+  implementing 003 first and building 002 directly against the stable `lean` avoids that
+  rework. Recommendation is 003 before 002.
 - **Confirm the entry/invalidation/tranche formula** (ATR-anchored, as recommended above)
   before implementation -- the specific multipliers (1.0/0.5/2.0 x ATR, the tranche-pct
-  breakpoints) are a first pass, not backtested.
-- **Confirm the `horizon` field's scope here.** This spec computes a lightweight two-bucket
-  proxy from existing checks; the separately-open "horizon-tagged signals" backlog item
-  would do this properly (a horizon tag per individual signal, scored per-horizon instead of
-  pooled). Recommendation is to ship the simple version now rather than block this spec on
-  that one, and let that later spec supersede/refine `horizon` when it's built -- confirm
-  that sequencing is acceptable rather than doing horizon tagging properly once, here.
+  breakpoints) are a first pass, not backtested, and the `score >= 3` tranche breakpoint
+  specifically needs re-checking against specs/003's narrower `fundamental_score` range
+  (see Design note above).
 - **Confirm single average-cost-basis-per-symbol is sufficient** rather than a full
   multi-lot ledger -- a family member who bought the same stock twice at different prices
   would need to average it themselves before entering it.
