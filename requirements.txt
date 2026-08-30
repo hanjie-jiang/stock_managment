@@ -3,5 +3,6 @@ pandas>=3.0.5
 numpy>=2.5.2
 requests>=2.32
 streamlit>=1.62.0
+matplotlib>=3.11.1
 notebook>=7.0
 ipykernel>=6.29

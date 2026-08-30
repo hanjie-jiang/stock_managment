@@ -83,7 +83,7 @@ with tab_overview:
 
     history = load_price_history(symbol, period_labels[period_label])
     if history is not None and not history.empty:
-        st.line_chart(history)
+        ui.render_line_chart(history)
     else:
         st.write(t("no_price_history"))
 

@@ -7,7 +7,11 @@ app's Streamlit layer -- stock_toolkit stays UI-free.
 import html as _html
 from collections import defaultdict
 
+import matplotlib
 import streamlit as st
+
+matplotlib.use("Agg")  # headless -- no display available on a server/service
+import matplotlib.pyplot as plt
 
 import stock_toolkit as tk
 from data import settings_store as ss
@@ -82,6 +86,25 @@ def render_table(rows, columns=None):
         f"<thead><tr>{header_html}</tr></thead><tbody>{body_html}</tbody></table></div>",
         unsafe_allow_html=True,
     )
+
+
+def render_line_chart(series):
+    """Render a single-series line chart via matplotlib + st.pyplot(), not
+    st.line_chart()/st.area_chart()/st.bar_chart() -- like render_table() above,
+    Streamlit's built-in chart widgets serialize data through Altair's arrow-based
+    path (convert_anything_to_arrow_bytes in vega_charts.py), which needs pyarrow --
+    blocked by the same Application Control policy render_table() already works
+    around (confirmed by hitting the exact DLL-blocked error live on this machine).
+    matplotlib has no such dependency. Caller is responsible for the empty/None
+    case, same division of labor as the st.line_chart() call this replaced.
+    """
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(series.index, series.values, color="#1f6feb", linewidth=1.8)
+    ax.grid(True, alpha=0.3)
+    ax.tick_params(labelsize=12)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
 
 
 def init_language_state():
